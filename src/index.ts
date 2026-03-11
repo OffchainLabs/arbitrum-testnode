@@ -3,6 +3,7 @@ import { Cli } from "incur";
 import { cleanCli } from "./commands/clean.js";
 import { initCli } from "./commands/init.js";
 import { logsCli } from "./commands/logs.js";
+import { snapshotCli } from "./commands/snapshot.js";
 import { startCli } from "./commands/start.js";
 import { statusCli } from "./commands/status.js";
 import { stopCli } from "./commands/stop.js";
@@ -14,6 +15,7 @@ const cli = Cli.create("testnode", {
 
 cli.command(initCli);
 cli.command(logsCli);
+cli.command(snapshotCli);
 cli.command(startCli);
 cli.command(stopCli);
 cli.command(cleanCli);

@@ -5,14 +5,19 @@ import { Cli, z } from "incur";
 import { accounts } from "../accounts.js";
 import { writeChainConfig } from "../chain-config.js";
 import { clampDepositAmount } from "../deposit-amount.js";
-import { composeRestart, composeUp, waitForRpc } from "../docker.js";
-import { arbitrum, cast, execOrThrow } from "../exec.js";
+import { composeDown, composeRestart, composeUp, waitForRpc } from "../docker.js";
+import { arbitrum, cast, exec, execOrThrow } from "../exec.js";
 import { ZERO_ADDRESS } from "../init-helpers.js";
 import { getL3ParentChainFundingPlan } from "../l3-parent-chain-funding.js";
 import {
 	patchGeneratedL2NodeConfig,
 	patchGeneratedL3NodeConfig,
 } from "../node-config-patches.js";
+import {
+	startAnvilWithState,
+	startNitroFromSnapshot,
+	stopRuntime,
+} from "../runtime.js";
 import {
 	finishActiveRun,
 	logRunEvent,
@@ -38,6 +43,13 @@ import {
 	saveState,
 } from "../state.js";
 import { ensureValidatorWalletStaked } from "../validator-wallet.js";
+import {
+	DEFAULT_SNAPSHOT_ID,
+	captureSnapshot,
+	hasSnapshot,
+	restoreSnapshot,
+	verifySnapshotSemanticState,
+} from "../snapshot.js";
 
 const PROJECT_ROOT = resolve(import.meta.dirname, "../..");
 const CONFIG_DIR = resolve(PROJECT_ROOT, "config");
@@ -376,26 +388,8 @@ function readDeployment(name: string): DeploymentJson {
 function createL1Steps(): Record<string, StepRunner> {
 	return {
 		"start-l1": async (state) => {
-			anvilProcess = spawn(
-				"anvil",
-				[
-					"--host",
-					"0.0.0.0",
-					"--port",
-					"8545",
-					"--block-time",
-					"1",
-					"--accounts",
-					"10",
-					"--balance",
-					"10000",
-					"--chain-id",
-					"1337",
-				],
-				{ stdio: "ignore", detached: true },
-			);
-			anvilProcess.unref();
-			return markStepDone(state, "start-l1", { pid: anvilProcess.pid });
+			anvilProcess = startAnvilWithState(CONFIG_DIR);
+			return markStepDone(state, "start-l1", { ...(anvilProcess?.pid ? { pid: anvilProcess.pid } : {}) });
 		},
 		"wait-l1": async (state) => {
 			await waitForRpc(L1_RPC);
@@ -457,7 +451,7 @@ function createL2DeploySteps(): Record<string, StepRunner> {
 					"--parent-beacon-rpc",
 					"http://localhost:5555",
 					"--batch-poster-key",
-					accounts.l2BatchPoster.privateKey,
+					accounts.l2Sequencer.privateKey,
 					"--validator-key",
 					accounts.l2Validator.privateKey,
 					"--output-dir",
@@ -610,7 +604,7 @@ function createL3Steps(): Record<string, StepRunner> {
 					"--parent-chain-id",
 					"412346",
 					"--batch-poster-key",
-					accounts.l3BatchPoster.privateKey,
+					accounts.l3Sequencer.privateKey,
 					"--validator-key",
 					accounts.l3Validator.privateKey,
 					"--output-dir",
@@ -624,7 +618,12 @@ function createL3Steps(): Record<string, StepRunner> {
 			const src = resolve(CONFIG_DIR, "nodeConfig.json");
 			const dest = resolve(CONFIG_DIR, "l3-nodeConfig.json");
 			const config = JSON.parse(readFileSync(src, "utf-8")) as Record<string, unknown>;
-				const patched = patchGeneratedL3NodeConfig(config, L2_RPC_INTERNAL, false);
+			const patched = patchGeneratedL3NodeConfig(
+				config,
+				L2_RPC_INTERNAL,
+				false,
+				accounts.l3Sequencer.privateKey,
+			);
 				writeFileSync(dest, JSON.stringify(patched, null, 2));
 				return markStepDone(state, "generate-l3-config");
 				},
@@ -808,6 +807,10 @@ export const initCli = Cli.create("init", {
 			.boolean()
 			.optional()
 			.describe("Internal worker mode for detached init runs"),
+		rebuild: z
+			.boolean()
+			.optional()
+			.describe("Force a full rebuild instead of restoring the default snapshot"),
 	}),
 	async run(c) {
 		if (c.options.background && !c.options.foreground) {
@@ -823,11 +826,54 @@ export const initCli = Cli.create("init", {
 			};
 		}
 
-		startRunLoggingFromEnv(CONFIG_DIR) ??
-			startInlineRunLogging(CONFIG_DIR, c.options.foreground ? ["init", "--foreground"] : ["init"]);
-
 		try {
 			const totalStart = Date.now();
+			const shouldRestoreSnapshot =
+				!c.options.rebuild && hasSnapshot(CONFIG_DIR, DEFAULT_SNAPSHOT_ID);
+
+			if (shouldRestoreSnapshot) {
+				console.log(`[init] Restoring snapshot: ${DEFAULT_SNAPSHOT_ID}`);
+				stopRuntime({
+					composeFile: COMPOSE_FILE,
+					projectName: "arbitrum-testnode",
+					configDir: CONFIG_DIR,
+				});
+				restoreSnapshot(CONFIG_DIR, DEFAULT_SNAPSHOT_ID);
+				startRunLoggingFromEnv(CONFIG_DIR) ??
+					startInlineRunLogging(
+						CONFIG_DIR,
+						c.options.foreground ? ["init", "--foreground"] : ["init"],
+					);
+				anvilProcess = startAnvilWithState(CONFIG_DIR);
+				await waitForRpc(L1_RPC);
+				await startNitroFromSnapshot(
+					{
+						composeFile: COMPOSE_FILE,
+						projectName: "arbitrum-testnode",
+						configDir: CONFIG_DIR,
+					},
+					{ l1: L1_RPC, l2: L2_RPC, l3: L3_RPC },
+				);
+				verifySnapshotSemanticState(CONFIG_DIR, {
+					l1: L1_RPC,
+					l2: L2_RPC,
+					l3: L3_RPC,
+				});
+
+				const totalElapsed = Date.now() - totalStart;
+				finishActiveRun("completed", { exitCode: 0 });
+				return {
+					success: true,
+					restoredSnapshot: DEFAULT_SNAPSHOT_ID,
+					totalSeconds: totalElapsed / 1000,
+				};
+			}
+
+			startRunLoggingFromEnv(CONFIG_DIR) ??
+				startInlineRunLogging(
+					CONFIG_DIR,
+					c.options.foreground ? ["init", "--foreground"] : ["init"],
+				);
 			const result = await runInitLoop();
 			const totalElapsed = Date.now() - totalStart;
 
@@ -848,11 +894,33 @@ export const initCli = Cli.create("init", {
 				return { success: false, failedStep: result.failedStep, error: result.error };
 			}
 
+			stopRuntime({
+				composeFile: COMPOSE_FILE,
+				projectName: "arbitrum-testnode",
+				configDir: CONFIG_DIR,
+			});
+			const snapshot = captureSnapshot(CONFIG_DIR, COMPOSE_FILE, DEFAULT_SNAPSHOT_ID);
+			anvilProcess = startAnvilWithState(CONFIG_DIR);
+			await waitForRpc(L1_RPC);
+			await startNitroFromSnapshot(
+				{
+					composeFile: COMPOSE_FILE,
+					projectName: "arbitrum-testnode",
+					configDir: CONFIG_DIR,
+				},
+				{ l1: L1_RPC, l2: L2_RPC, l3: L3_RPC },
+			);
+			verifySnapshotSemanticState(CONFIG_DIR, {
+				l1: L1_RPC,
+				l2: L2_RPC,
+				l3: L3_RPC,
+			});
 			finishActiveRun("completed", { exitCode: 0 });
 			return {
 				success: true,
 				stepsCompleted: INIT_STEPS.length,
 				totalSeconds: totalElapsed / 1000,
+				snapshotId: snapshot.snapshotId,
 			};
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);

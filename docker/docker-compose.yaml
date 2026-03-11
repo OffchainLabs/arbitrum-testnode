@@ -65,16 +65,16 @@ services:
       - --node.staker.use-smart-contract-wallet=true
       - --node.staker.disable-challenge=true
       - --node.staker.dangerous.without-block-validator
-      - --node.staker.staker-interval=1s
-      - --node.staker.make-assertion-interval=1s
+      - --node.staker.staker-interval=100ms
+      - --node.staker.make-assertion-interval=100ms
       - --node.staker.confirmation-blocks=1
       - --node.bold.check-staker-switch-interval=876000h
       - --node.bold.rpc-block-number=latest
-      - --node.bold.assertion-posting-interval=1s
-      - --node.bold.assertion-confirming-interval=1s
-      - --node.bold.assertion-scanning-interval=1s
-      - --node.bold.minimum-gap-to-parent-assertion=1s
-      - --node.bold.parent-chain-block-time=1s
+      - --node.bold.assertion-posting-interval=100ms
+      - --node.bold.assertion-confirming-interval=100ms
+      - --node.bold.assertion-scanning-interval=100ms
+      - --node.bold.minimum-gap-to-parent-assertion=100ms
+      - --node.bold.parent-chain-block-time=100ms
       - --http.addr=0.0.0.0
       - --http.port=8647
       - --http.api=net,web3,eth

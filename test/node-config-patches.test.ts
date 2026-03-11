@@ -37,6 +37,7 @@ describe("patchGeneratedL2NodeConfig", () => {
 					"disable-blob-reader": false,
 				},
 			},
+			execution: {},
 		};
 
 		const result = patchGeneratedL2NodeConfig(
@@ -63,9 +64,9 @@ describe("patchGeneratedL2NodeConfig", () => {
 					"private-key": "new-key",
 				},
 				"l1-block-bound": "ignore",
-				"max-delay": "1s",
-				"poll-interval": "1s",
-				"error-delay": "1s",
+				"max-delay": "100ms",
+				"poll-interval": "100ms",
+				"error-delay": "100ms",
 				"wait-for-max-delay": false,
 				"data-poster": {
 					"wait-for-l1-finality": false,
@@ -84,6 +85,11 @@ describe("patchGeneratedL2NodeConfig", () => {
 			},
 			dangerous: {
 				"disable-blob-reader": false,
+			},
+		});
+		expect(result.execution).toEqual({
+			sequencer: {
+				"max-block-speed": "100ms",
 			},
 		});
 	});
@@ -119,7 +125,12 @@ describe("patchGeneratedL3NodeConfig", () => {
 			execution: {},
 		};
 
-		const result = patchGeneratedL3NodeConfig(input, "http://sequencer:8547", false);
+		const result = patchGeneratedL3NodeConfig(
+			input,
+			"http://sequencer:8547",
+			false,
+			"0xposter-key",
+		);
 
 		expect(result["ensure-rollup-deployment"]).toBe(false);
 		expect(result.chain).toEqual({
@@ -135,10 +146,13 @@ describe("patchGeneratedL3NodeConfig", () => {
 		expect(result.node).toEqual({
 			"batch-poster": {
 				enable: true,
+				"parent-chain-wallet": {
+					"private-key": "poster-key",
+				},
 				"l1-block-bound": "ignore",
-				"max-delay": "1s",
-				"poll-interval": "1s",
-				"error-delay": "1s",
+				"max-delay": "100ms",
+				"poll-interval": "100ms",
+				"error-delay": "100ms",
 				"wait-for-max-delay": false,
 				"redis-url": "",
 				"data-poster": {
@@ -147,11 +161,11 @@ describe("patchGeneratedL3NodeConfig", () => {
 			},
 			bold: {
 				"rpc-block-number": "latest",
-				"assertion-posting-interval": "1s",
-				"assertion-confirming-interval": "1s",
-				"assertion-scanning-interval": "1s",
-				"minimum-gap-to-parent-assertion": "1s",
-				"parent-chain-block-time": "1s",
+				"assertion-posting-interval": "100ms",
+				"assertion-confirming-interval": "100ms",
+				"assertion-scanning-interval": "100ms",
+				"minimum-gap-to-parent-assertion": "100ms",
+				"parent-chain-block-time": "100ms",
 			},
 			dangerous: {
 				"disable-blob-reader": true,
@@ -164,11 +178,16 @@ describe("patchGeneratedL3NodeConfig", () => {
 				enable: false,
 				"use-smart-contract-wallet": true,
 				"disable-challenge": true,
-				"staker-interval": "1s",
-				"make-assertion-interval": "1s",
+				"staker-interval": "100ms",
+				"make-assertion-interval": "100ms",
 			},
 		});
-		expect(result.execution).toEqual({ "forwarding-target": "null" });
+		expect(result.execution).toEqual({
+			"forwarding-target": "null",
+			sequencer: {
+				"max-block-speed": "100ms",
+			},
+		});
 		expect(result.persistent).toEqual({ chain: "local" });
 		expect(result.ws).toEqual({ addr: "0.0.0.0" });
 	});

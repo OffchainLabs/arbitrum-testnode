@@ -1,24 +1,28 @@
 type JsonObject = Record<string, unknown>;
 
 const FAST_BATCH_POSTER_CONFIG = {
-	"max-delay": "1s",
-	"poll-interval": "1s",
-	"error-delay": "1s",
+	"max-delay": "100ms",
+	"poll-interval": "100ms",
+	"error-delay": "100ms",
 	"wait-for-max-delay": false,
 } as const;
 
 const FAST_BOLD_CONFIG = {
 	"rpc-block-number": "latest",
-	"assertion-posting-interval": "1s",
-	"assertion-confirming-interval": "1s",
-	"assertion-scanning-interval": "1s",
-	"minimum-gap-to-parent-assertion": "1s",
-	"parent-chain-block-time": "1s",
+	"assertion-posting-interval": "100ms",
+	"assertion-confirming-interval": "100ms",
+	"assertion-scanning-interval": "100ms",
+	"minimum-gap-to-parent-assertion": "100ms",
+	"parent-chain-block-time": "100ms",
 } as const;
 
 const FAST_STAKER_CONFIG = {
-	"staker-interval": "1s",
-	"make-assertion-interval": "1s",
+	"staker-interval": "100ms",
+	"make-assertion-interval": "100ms",
+} as const;
+
+const FAST_EXECUTION_SEQUENCER_CONFIG = {
+	"max-block-speed": "100ms",
 } as const;
 
 function getJsonObject(parent: JsonObject, key: string): JsonObject {
@@ -73,6 +77,7 @@ export function patchGeneratedL2NodeConfig(
 	const batchPoster = getJsonObject(node, "batch-poster");
 	const delayedSequencer = getJsonObject(node, "delayed-sequencer");
 	const staker = getJsonObject(node, "staker");
+	const execution = getOrCreateJsonObject(next, "execution");
 
 	patchChainInfoJsonStakeToken(next, stakeTokenAddress);
 	if (batchPosterPrivateKey) {
@@ -93,6 +98,7 @@ export function patchGeneratedL2NodeConfig(
 		"wait-for-l1-finality": false,
 	};
 	delayedSequencer["finalize-distance"] = 0;
+	Object.assign(getOrCreateJsonObject(execution, "sequencer"), FAST_EXECUTION_SEQUENCER_CONFIG);
 
 	return next;
 }
@@ -101,6 +107,7 @@ export function patchGeneratedL3NodeConfig(
 	config: JsonObject,
 	parentChainUrl: string,
 	enableStaker = true,
+	batchPosterPrivateKey?: string,
 ): JsonObject {
 	const next = structuredClone(config);
 	const chain = getJsonObject(next, "chain");
@@ -119,6 +126,11 @@ export function patchGeneratedL3NodeConfig(
 	chain["id"] = 412347;
 	chain["info-files"] = ["/config/l3_chain_info.json"];
 	parentConnection["url"] = parentChainUrl;
+	if (batchPosterPrivateKey) {
+		batchPoster["parent-chain-wallet"] = {
+			"private-key": normalizePrivateKey(batchPosterPrivateKey),
+		};
+	}
 	batchPoster["redis-url"] = "";
 	batchPoster["l1-block-bound"] = "ignore";
 	Object.assign(batchPoster, FAST_BATCH_POSTER_CONFIG);
@@ -133,6 +145,7 @@ export function patchGeneratedL3NodeConfig(
 	dangerous["disable-blob-reader"] = true;
 	delayedSequencer["finalize-distance"] = 0;
 	execution["forwarding-target"] = "null";
+	Object.assign(getOrCreateJsonObject(execution, "sequencer"), FAST_EXECUTION_SEQUENCER_CONFIG);
 	next["persistent"] = { chain: "local" };
 	next["ws"] = { addr: "0.0.0.0" };
 

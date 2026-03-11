@@ -21,6 +21,7 @@ export const stopCli = Cli.create("stop", {
 
 		console.log("[stop] Killing Anvil...");
 		exec("pkill", ["-f", "anvil.*--port.*8545"]);
+		exec("pkill", ["-f", "testnode-l1-heartbeat"]);
 
 		console.log("[stop] Done.");
 		return { success: true };
