@@ -1,0 +1,24 @@
+{
+  "runId": "2026-03-11T12-06-35-088Z",
+  "status": "completed",
+  "command": "testnode",
+  "args": [
+    "init",
+    "--foreground"
+  ],
+  "startedAt": "2026-03-11T12:06:35.089Z",
+  "paths": {
+    "metaFile": "/Users/douglance/Developer/oc/arbitrum-testnode/config/runs/2026-03-11T12-06-35-088Z/run.json",
+    "logFile": "/Users/douglance/Developer/oc/arbitrum-testnode/config/runs/2026-03-11T12-06-35-088Z/output.log",
+    "eventsFile": "/Users/douglance/Developer/oc/arbitrum-testnode/config/runs/2026-03-11T12-06-35-088Z/events.jsonl"
+  },
+  "pid": 76709,
+  "lastEvent": {
+    "at": "2026-03-11T12:14:38.183Z",
+    "level": "info",
+    "event": "run.completed",
+    "message": "Init run completed"
+  },
+  "finishedAt": "2026-03-11T12:14:38.183Z",
+  "exitCode": 0
+}

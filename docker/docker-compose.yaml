@@ -1,0 +1,115 @@
+services:
+  sequencer:
+    image: offchainlabs/nitro-node:v3.9.5-66e42c4
+    ports:
+      - "8547:8547"
+      - "8548:8548"
+    volumes:
+      - ../config:/config
+      - sequencer-data:/home/user/.arbitrum
+    entrypoint: ["nitro"]
+    command:
+      - --conf.file=/config/l2-nodeConfig.json
+      - --node.feed.output.enable
+      - --node.feed.output.port=9642
+      - --node.dangerous.disable-blob-reader
+      - --node.staker.enable=false
+      - --http.addr=0.0.0.0
+      - --http.port=8547
+      - --http.api=net,web3,eth,txpool,debug
+      - --http.corsdomain=*
+      - --http.vhosts=*
+      - --ws.addr=0.0.0.0
+      - --ws.port=8548
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  l3node:
+    image: offchainlabs/nitro-node:v3.9.5-66e42c4
+    ports:
+      - "8549:8547"
+      - "8550:8548"
+    volumes:
+      - ../config:/config
+      - l3node-data:/home/user/.arbitrum
+    entrypoint: ["nitro"]
+    command:
+      - --conf.file=/config/l3-nodeConfig.json
+      - --node.dangerous.disable-blob-reader
+      - --http.addr=0.0.0.0
+      - --http.port=8547
+      - --http.api=net,web3,eth,txpool,debug
+      - --http.corsdomain=*
+      - --http.vhosts=*
+      - --ws.addr=0.0.0.0
+      - --ws.port=8548
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - sequencer
+
+  validator:
+    image: offchainlabs/nitro-node:v3.9.5-66e42c4
+    volumes:
+      - ../config:/config
+      - validator-data:/home/user/.arbitrum
+    entrypoint: ["nitro"]
+    command:
+      - --conf.file=/config/l2-nodeConfig.json
+      - --node.sequencer=false
+      - --node.delayed-sequencer.enable=false
+      - --node.dangerous.disable-blob-reader
+      - --execution.sequencer.enable=false
+      - --execution.forwarding-target=null
+      - --node.staker.enable=true
+      - --node.staker.use-smart-contract-wallet=true
+      - --node.staker.disable-challenge=true
+      - --node.staker.dangerous.without-block-validator
+      - --node.staker.staker-interval=1s
+      - --node.staker.make-assertion-interval=1s
+      - --node.staker.confirmation-blocks=1
+      - --node.bold.check-staker-switch-interval=876000h
+      - --node.bold.rpc-block-number=latest
+      - --node.bold.assertion-posting-interval=1s
+      - --node.bold.assertion-confirming-interval=1s
+      - --node.bold.assertion-scanning-interval=1s
+      - --node.bold.minimum-gap-to-parent-assertion=1s
+      - --node.bold.parent-chain-block-time=1s
+      - --http.addr=0.0.0.0
+      - --http.port=8647
+      - --http.api=net,web3,eth
+      - --ws.addr=0.0.0.0
+      - --ws.port=8648
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - sequencer
+
+  scripts:
+    image: nitro-testnode-scripts:latest
+    volumes:
+      - ../config:/config
+      - tokenbridge-data:/tokenbridge-data
+
+  tokenbridge:
+    image: nitro-testnode-tokenbridge:latest
+    build:
+      context: .
+      dockerfile: tokenbridge.Dockerfile
+    depends_on:
+      - sequencer
+    environment:
+      - ARB_URL=http://sequencer:8547
+      - ETH_URL=http://host.docker.internal:8545
+    volumes:
+      - ../config:/config
+      - tokenbridge-data:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  sequencer-data:
+  l3node-data:
+  validator-data:
+  tokenbridge-data:
