@@ -111,7 +111,7 @@ try {
 	try {
 		const logs = execFileSync(
 			"sh",
-			["-c", `docker logs ${state.containerName} 2>&1 | tail -80`],
+			["-c", `docker logs ${state.containerName} 2>&1 | grep -v "Block Number\\|Block Hash\\|Block Time" | tail -100`],
 			{ encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
 		);
 		log(`container logs:\n${logs}`);

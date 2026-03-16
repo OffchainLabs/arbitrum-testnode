@@ -33,19 +33,20 @@ monitor_pids() {
 
 trap cleanup EXIT INT TERM
 
+echo "state file: $DATA_ROOT/anvil-state"
+ls -la "$DATA_ROOT/anvil-state" 2>&1 || echo "state file missing!"
+echo "variant: $VARIANT"
+
 start_background /usr/local/bin/anvil \
 	--host 0.0.0.0 \
 	--port 8545 \
 	--block-time 1 \
-	--accounts 10 \
-	--balance 10000 \
 	--chain-id 1337 \
-	--state "$DATA_ROOT/anvil-state"
+	--load-state "$DATA_ROOT/anvil-state"
 
 echo "waiting for anvil on port 8545..."
 DEADLINE=$(($(date +%s) + 60))
-while ! wget -q -O /dev/null --post-data '{"id":1,"jsonrpc":"2.0","method":"eth_chainId","params":[]}' \
-	--header='Content-Type: application/json' http://127.0.0.1:8545 2>/dev/null; do
+while ! grep -q ":2161 " /proc/net/tcp 2>/dev/null; do
 	if [ "$(date +%s)" -ge "$DEADLINE" ]; then
 		echo "anvil did not start within 60s" >&2
 		exit 1
@@ -67,7 +68,8 @@ start_background env HOME="$DATA_ROOT/sequencer" /usr/local/bin/nitro \
 	--http.corsdomain='*' \
 	--http.vhosts='*' \
 	--ws.addr=0.0.0.0 \
-	--ws.port=8548
+	--ws.port=8548 \
+	--auth.port=8551
 
 start_background env HOME="$DATA_ROOT/validator" /usr/local/bin/nitro \
 	--validation.wasm.allowed-wasm-module-roots "$NITRO_WASM_ROOTS" \
@@ -95,9 +97,14 @@ start_background env HOME="$DATA_ROOT/validator" /usr/local/bin/nitro \
 	--http.port=8647 \
 	--http.api=net,web3,eth \
 	--ws.addr=0.0.0.0 \
-	--ws.port=8648
+	--ws.port=8648 \
+	--auth.port=8552
 
 if [ "$VARIANT" != "l2" ]; then
+	echo "waiting 10s for L2 sequencer to start..."
+	sleep 10
+	echo "L2 wait done, starting L3 node"
+
 	start_background env HOME="$DATA_ROOT/l3node" /usr/local/bin/nitro \
 		--validation.wasm.allowed-wasm-module-roots "$NITRO_WASM_ROOTS" \
 		--conf.file="$CONFIG_ROOT/l3-nodeConfig.json" \
@@ -108,7 +115,8 @@ if [ "$VARIANT" != "l2" ]; then
 		--http.corsdomain='*' \
 		--http.vhosts='*' \
 		--ws.addr=0.0.0.0 \
-		--ws.port=8550
+		--ws.port=8550 \
+		--auth.port=8553
 fi
 
 monitor_pids
