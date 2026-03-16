@@ -1,0 +1,96 @@
+{
+  "chain": {
+    "name": "L3-Testnode",
+    "id": 412347,
+    "info-files": [
+      "/config/l3_chain_info.json"
+    ]
+  },
+  "parent-chain": {
+    "connection": {
+      "url": "http://127.0.0.1:8547"
+    }
+  },
+  "http": {
+    "addr": "0.0.0.0",
+    "port": 8449,
+    "vhosts": [
+      "*"
+    ],
+    "corsdomain": [
+      "*"
+    ],
+    "api": [
+      "eth",
+      "net",
+      "web3",
+      "arb",
+      "debug"
+    ]
+  },
+  "node": {
+    "sequencer": true,
+    "delayed-sequencer": {
+      "enable": true,
+      "use-merge-finality": false,
+      "finalize-distance": 0
+    },
+    "batch-poster": {
+      "max-size": 90000,
+      "enable": true,
+      "parent-chain-wallet": {
+        "private-key": "47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"
+      },
+      "redis-url": "",
+      "l1-block-bound": "ignore",
+      "max-delay": "100ms",
+      "poll-interval": "100ms",
+      "error-delay": "100ms",
+      "wait-for-max-delay": false,
+      "data-poster": {
+        "wait-for-l1-finality": false
+      }
+    },
+    "staker": {
+      "enable": true,
+      "strategy": "MakeNodes",
+      "parent-chain-wallet": {
+        "private-key": "8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba"
+      },
+      "use-smart-contract-wallet": true,
+      "disable-challenge": true,
+      "staker-interval": "100ms",
+      "make-assertion-interval": "100ms"
+    },
+    "dangerous": {
+      "no-sequencer-coordinator": true,
+      "disable-blob-reader": true
+    },
+    "bold": {
+      "rpc-block-number": "latest",
+      "assertion-posting-interval": "100ms",
+      "assertion-confirming-interval": "100ms",
+      "assertion-scanning-interval": "100ms",
+      "minimum-gap-to-parent-assertion": "100ms",
+      "parent-chain-block-time": "100ms"
+    }
+  },
+  "execution": {
+    "forwarding-target": "null",
+    "sequencer": {
+      "enable": true,
+      "max-tx-data-size": 85000,
+      "max-block-speed": "100ms"
+    },
+    "caching": {
+      "archive": true
+    }
+  },
+  "ensure-rollup-deployment": false,
+  "persistent": {
+    "chain": "local"
+  },
+  "ws": {
+    "addr": "0.0.0.0"
+  }
+}

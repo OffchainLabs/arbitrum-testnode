@@ -1,0 +1,64 @@
+{
+  "l2Network": {
+    "parentChainId": 1337,
+    "chainId": 412346,
+    "confirmPeriodBlocks": 1,
+    "ethBridge": {
+      "bridge": "0xbF3309119EEc0f545Cc290509BE2bf9Aeb0Cbe27",
+      "inbox": "0xBfe3E06740005D074c422914756251CF3AE8fF5a",
+      "outbox": "0xe84eAD47C985F788251Ce32dcE1C9A9D2d3Dfa71",
+      "rollup": "0x48a76241ed6EFfad4c4b2fa4be63c8238b458053",
+      "sequencerInbox": "0x3530B566B8e7c69f52cA5F54731BB76FB4DFCc15"
+    },
+    "isCustom": true,
+    "name": "L2-Testnode",
+    "retryableLifetimeSeconds": 604800,
+    "isTestnet": true,
+    "tokenBridge": {
+      "parentCustomGateway": "0x8AfCEa8e1f964138bF7e4cc90F927ED277d7e03B",
+      "parentErc20Gateway": "0xd6006e99E93Cf6EEE1d89d600B14CF982ce8Eaec",
+      "parentGatewayRouter": "0xD3b1914515e384AaD5d63600519924DDFa909812",
+      "parentMultiCall": "0xF6FBB5343983412632b83eA229edbAd8c778a820",
+      "parentWeth": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "parentWethGateway": "0xd62f6883c7683a1a1b408fad2fe8807E6ecD21Aa",
+      "childCustomGateway": "0x66BB36b89a60dFb06aFdf39F5f5504CF5f50089A",
+      "childErc20Gateway": "0xd6Ef270413434553D5C96aCEFcF73c1b1292Ccae",
+      "childGatewayRouter": "0xc5E80CC4350Cc931B7E182E23730989EEFBc8e12",
+      "childMultiCall": "0xa904187D2AbA9386FDE26de9f67a268DbCc1EfD2",
+      "childProxyAdmin": "0xA67cbA39e6042c222205fe1653CcfB4D19d33D33",
+      "childWeth": "0xbF66e61764cc108136c33EdcaE5991F47F956D86",
+      "childWethGateway": "0x3AABEFc10DDF6337e39d8BB7a7433760a65d774D"
+    }
+  },
+  "l3Network": {
+    "parentChainId": 412346,
+    "chainId": 412347,
+    "confirmPeriodBlocks": 1,
+    "ethBridge": {
+      "bridge": "0x3D9dc0C056b556A7C6a69e3bd0Ce2E96A01eF8D3",
+      "inbox": "0x3FEC3ceD2aF6e3b2BCaefFb72897aDa9928338EF",
+      "outbox": "0xfCFf735DA25f041A97669767FEF7d36871D4cE5e",
+      "rollup": "0xA9d7045AfF7f46cf8DA991e652c025D0D9412aeD",
+      "sequencerInbox": "0x5dc77730B463298f70a2Df772C2009a1Ac072B9A"
+    },
+    "isCustom": true,
+    "name": "L3-Testnode",
+    "retryableLifetimeSeconds": 604800,
+    "isTestnet": true,
+    "tokenBridge": {
+      "parentCustomGateway": "0x3961b39DbEF440afF6717658E62A25342728E453",
+      "parentErc20Gateway": "0x4682E88C76cF5D53B180ABcbec7997017C598FEA",
+      "parentGatewayRouter": "0x869686f05Aff76CF695371Ef3C5C02635e5012a2",
+      "parentMultiCall": "0xF6FBB5343983412632b83eA229edbAd8c778a820",
+      "parentWeth": "0xbF66e61764cc108136c33EdcaE5991F47F956D86",
+      "parentWethGateway": "0xd986E056c17A88fA16A14e60df3c301f697A08ad",
+      "childCustomGateway": "0xc81658eFd5a7d84Ae6aF44FF22aff363338CDdD8",
+      "childErc20Gateway": "0x2b38404373A30756D28c80D716412DC581ce3d2C",
+      "childGatewayRouter": "0x5048d30876E09388fC939C259787d92D6ed84b4d",
+      "childMultiCall": "0x4d039E4ec252FE14D34A51C1030d39C978B02c2E",
+      "childProxyAdmin": "0x07A4724e5C284DF3BA46B71552cc772eE1101E4b",
+      "childWeth": "0x59698025a1926c4865a62d3141141792367Ddc91",
+      "childWethGateway": "0x83316998493353b1FAd29Bf4b24636c9f906De09"
+    }
+  }
+}

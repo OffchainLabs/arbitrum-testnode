@@ -1,0 +1,76 @@
+name: Publish CI Runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Pinned runtime version tag"
+        required: true
+        type: string
+      snapshot-version:
+        description: "Tagged snapshot release version to install"
+        required: true
+        type: string
+      snapshot-repo:
+        description: "GitHub repo in owner/repo form that hosts the tagged snapshot release"
+        required: false
+        default: ""
+        type: string
+      variant:
+        description: "Runtime variant to publish"
+        required: true
+        default: "l3-eth"
+        type: choice
+        options:
+          - l2
+          - l3-eth
+          - l3-custom-6
+          - l3-custom-18
+          - l3-custom-20
+
+jobs:
+  publish-runtime-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install snapshot release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TESTNODE_SNAPSHOT_GH_REPO: ${{ inputs.snapshot-repo || github.repository }}
+        run: pnpm dev snapshot install --force --release-tag "${{ inputs.snapshot-version }}"
+
+      - name: Prepare runtime context
+        run: node scripts/ci/prepare-runtime-context.mjs --variant "${{ inputs.variant }}" --snapshot-id default
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/ci-runtime.Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/arbitrum-testnode-ci:${{ inputs.version }}-${{ inputs.variant }}

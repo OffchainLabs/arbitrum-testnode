@@ -1,0 +1,82 @@
+{
+	"startedAt": "2026-03-11T15:34:30.131Z",
+	"steps": {
+		"start-l1": {
+			"status": "done",
+			"completedAt": "2026-03-11T15:34:30.146Z",
+			"data": {
+				"pid": 33194
+			}
+		},
+		"wait-l1": {
+			"status": "done",
+			"completedAt": "2026-03-11T15:34:31.166Z"
+		},
+		"deploy-l2-rollup": {
+			"status": "done",
+			"completedAt": "2026-03-11T15:36:16.583Z",
+			"data": {
+				"rollup": "0x48a76241ed6EFfad4c4b2fa4be63c8238b458053",
+				"inbox": "0xBfe3E06740005D074c422914756251CF3AE8fF5a",
+				"bridge": "0xbF3309119EEc0f545Cc290509BE2bf9Aeb0Cbe27",
+				"sequencerInbox": "0x3530B566B8e7c69f52cA5F54731BB76FB4DFCc15",
+				"upgradeExecutor": "0x2e0331F1e8f1baEBA5A28F6C127c6f6aE8dEd3D5",
+				"validatorWalletCreator": "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f",
+				"stakeToken": "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+			}
+		},
+		"generate-l2-config": {
+			"status": "done",
+			"completedAt": "2026-03-11T15:36:34.083Z"
+		},
+		"start-l2": {
+			"status": "done",
+			"completedAt": "2026-03-11T15:36:34.794Z"
+		},
+		"wait-l2": {
+			"status": "done",
+			"completedAt": "2026-03-11T15:36:34.799Z"
+		},
+		"deposit-eth-to-l2": {
+			"status": "done",
+			"completedAt": "2026-03-11T15:36:51.585Z"
+		},
+		"deploy-l2-token-bridge": {
+			"status": "done",
+			"completedAt": "2026-03-11T15:42:06.868Z"
+		},
+		"deploy-l3-rollup": {
+			"status": "done",
+			"completedAt": "2026-03-11T15:42:13.682Z",
+			"data": {
+				"rollup": "0xA9d7045AfF7f46cf8DA991e652c025D0D9412aeD",
+				"inbox": "0x3FEC3ceD2aF6e3b2BCaefFb72897aDa9928338EF",
+				"bridge": "0x3D9dc0C056b556A7C6a69e3bd0Ce2E96A01eF8D3",
+				"sequencerInbox": "0x5dc77730B463298f70a2Df772C2009a1Ac072B9A",
+				"upgradeExecutor": "0x6fd9a6940a9Dc7574C7377855991ddfFf7F27718",
+				"validatorWalletCreator": "0x4A679253410272dd5232B3Ff7cF5dbB88f295319",
+				"stakeToken": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+			}
+		},
+		"generate-l3-config": {
+			"status": "done",
+			"completedAt": "2026-03-11T15:42:14.055Z"
+		},
+		"start-l3": {
+			"status": "done",
+			"completedAt": "2026-03-11T15:42:15.008Z"
+		},
+		"wait-l3": {
+			"status": "done",
+			"completedAt": "2026-03-11T15:42:15.517Z"
+		},
+		"deposit-eth-to-l3": {
+			"status": "done",
+			"completedAt": "2026-03-11T15:42:32.047Z"
+		},
+		"deploy-l3-token-bridge": {
+			"status": "done",
+			"completedAt": "2026-03-11T15:45:38.515Z"
+		}
+	}
+}

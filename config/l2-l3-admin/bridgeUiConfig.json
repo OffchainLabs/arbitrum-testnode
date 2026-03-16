@@ -18,7 +18,7 @@
     "bridge": "0x3D9dc0C056b556A7C6a69e3bd0Ce2E96A01eF8D3",
     "upgradeExecutor": "0x6fd9a6940a9Dc7574C7377855991ddfFf7F27718",
     "validatorWalletCreator": "0x4A679253410272dd5232B3Ff7cF5dbB88f295319",
-    "deployedAtBlockNumber": 47
+    "deployedAtBlockNumber": 48
   },
   "tokenBridge": {
     "parentChain": {

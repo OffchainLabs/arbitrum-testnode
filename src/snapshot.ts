@@ -104,7 +104,7 @@ function parseDeploymentFile(configDir: string, name: "l2" | "l3"): { rollup: st
 	return JSON.parse(readFileSync(join(configDir, filename), "utf-8")) as { rollup: string };
 }
 
-function parseNitroNodeImage(composeFile: string): string {
+export function readNitroNodeImage(composeFile: string): string {
 	const compose = readFileSync(composeFile, "utf-8");
 	const match = compose.match(/image:\s*(offchainlabs\/nitro-node:[^\s]+)/);
 	if (!match) {
@@ -230,7 +230,7 @@ export function buildSnapshotManifest(
 		version: SNAPSHOT_VERSION,
 		snapshotId,
 		createdAt: new Date().toISOString(),
-		nitroNodeImage: parseNitroNodeImage(composeFile),
+		nitroNodeImage: readNitroNodeImage(composeFile),
 		chainIds: {
 			l1: 1337,
 			l2: 412346,

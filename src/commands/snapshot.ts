@@ -1,20 +1,22 @@
 import { resolve } from "node:path";
 import { Cli, z } from "incur";
 import { waitForRpc } from "../docker.js";
+import { startAnvilWithState, startNitroFromSnapshot, stopRuntime } from "../runtime.js";
+import { installSnapshotRelease, packageSnapshotRelease } from "../snapshot-release.js";
 import {
-	captureSnapshot,
 	DEFAULT_SNAPSHOT_ID,
+	captureSnapshot,
 	hasSnapshot,
 	invalidateSnapshot,
 	restoreSnapshot,
 	verifySnapshotManifest,
 	verifySnapshotSemanticState,
 } from "../snapshot.js";
-import { startAnvilWithState, startNitroFromSnapshot, stopRuntime } from "../runtime.js";
 
 const PROJECT_ROOT = resolve(import.meta.dirname, "../..");
 const CONFIG_DIR = resolve(PROJECT_ROOT, "config");
 const COMPOSE_FILE = resolve(PROJECT_ROOT, "docker/docker-compose.yaml");
+const SNAPSHOT_PACK_DIR = resolve(PROJECT_ROOT, "dist/snapshots");
 
 const RPCS = {
 	l1: "http://127.0.0.1:8545",
@@ -28,6 +30,28 @@ export const snapshotCli = Cli.create("snapshot", {
 
 const snapshotOptions = z.object({
 	id: z.string().optional().describe("Snapshot identifier (default: default)"),
+});
+
+const snapshotInstallOptions = z.object({
+	force: z.boolean().optional().describe("Replace an existing local snapshot"),
+	repo: z
+		.string()
+		.optional()
+		.describe("GitHub repo in owner/repo form (defaults to TESTNODE_SNAPSHOT_GH_REPO)"),
+	releaseTag: z
+		.string()
+		.optional()
+		.describe("GitHub release tag to install (defaults to latest)"),
+	url: z.string().optional().describe("Direct snapshot archive URL override"),
+});
+
+const snapshotPackOptions = z.object({
+	id: z.string().optional().describe("Snapshot identifier to package (default: default)"),
+	outDir: z
+		.string()
+		.optional()
+		.describe(`Output directory for packaged assets (default: ${SNAPSHOT_PACK_DIR})`),
+	tag: z.string().describe("Release tag used in the packaged asset names"),
 });
 
 snapshotCli.command("build", {
@@ -112,6 +136,52 @@ snapshotCli.command("verify", {
 			snapshotId,
 			semanticState,
 			manifest,
+		};
+	},
+});
+
+snapshotCli.command("install", {
+	description: "Download and install a snapshot release",
+	options: snapshotInstallOptions,
+	async run(c) {
+		const result = await installSnapshotRelease({
+			composeFile: COMPOSE_FILE,
+			configDir: CONFIG_DIR,
+			...(c.options.force !== undefined ? { force: c.options.force } : {}),
+			...(c.options.releaseTag ? { version: c.options.releaseTag } : {}),
+			...(c.options.repo ? { repo: c.options.repo } : {}),
+			...(c.options.url ? { url: c.options.url } : {}),
+		});
+		return {
+			success: true,
+			snapshotId: result.snapshotId,
+			archiveName: result.archiveName,
+			sourceUrl: result.sourceUrl,
+			sourceRepo: result.sourceRepo,
+			releaseTag: result.releaseTag,
+			manifest: result.manifest,
+		};
+	},
+});
+
+snapshotCli.command("pack", {
+	description: "Package a local snapshot into GitHub release assets",
+	options: snapshotPackOptions,
+	run(c) {
+		const result = packageSnapshotRelease(CONFIG_DIR, {
+			outDir: c.options.outDir ?? SNAPSHOT_PACK_DIR,
+			tag: c.options.tag,
+			...(c.options.id ? { snapshotId: c.options.id } : {}),
+		});
+		return {
+			success: true,
+			snapshotId: result.snapshotId,
+			tag: result.tag,
+			archiveName: result.archiveName,
+			archivePath: result.archivePath,
+			checksum: result.checksum,
+			checksumName: result.checksumName,
+			checksumPath: result.checksumPath,
 		};
 	},
 });

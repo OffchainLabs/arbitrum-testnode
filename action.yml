@@ -1,0 +1,106 @@
+name: Run Arbitrum Testnode
+description: "Boot a snapshot-backed Arbitrum testnode in GitHub CI and export its config files"
+inputs:
+  version:
+    required: true
+    description: "Pinned release version used to resolve the runtime image tag"
+  github-token:
+    required: false
+    description: "Token used for private GHCR authentication"
+  image-repository:
+    required: false
+    default: "ghcr.io/offchainlabs/arbitrum-testnode-ci"
+    description: "Container repository prefix used to resolve the runtime image"
+  l3-node:
+    required: false
+    default: "false"
+    description: "Whether to boot the L3-enabled variant"
+  fee-token-decimals:
+    required: false
+    default: ""
+    description: "Custom L3 fee-token decimals (6, 18, or 20) when l3-node=true"
+  output-dir:
+    required: false
+    default: ""
+    description: "Directory where the exported config files should be written"
+  container-name:
+    required: false
+    default: ""
+    description: "Optional Docker container name override"
+  startup-timeout-seconds:
+    required: false
+    default: "120"
+    description: "Maximum time to wait for the runtime RPCs to become ready"
+outputs:
+  config-dir:
+    description: "Directory containing the exported config files"
+    value: ${{ steps.resolve.outputs.config-dir }}
+  local-network-path:
+    description: "Path to localNetwork.json"
+    value: ${{ steps.resolve.outputs.local-network-path }}
+  l1l2-network-path:
+    description: "Path to l1l2_network.json"
+    value: ${{ steps.resolve.outputs.l1l2-network-path }}
+  l2l3-network-path:
+    description: "Path to l2l3_network.json"
+    value: ${{ steps.resolve.outputs.l2l3-network-path }}
+  l1-bridge-ui-config-path:
+    description: "Path to the L1/L2 bridge UI config"
+    value: ${{ steps.resolve.outputs.l1-bridge-ui-config-path }}
+  l2-bridge-ui-config-path:
+    description: "Path to the L2/L3 bridge UI config"
+    value: ${{ steps.resolve.outputs.l2-bridge-ui-config-path }}
+  l1-rpc-url:
+    description: "Host RPC URL for the L1"
+    value: ${{ steps.resolve.outputs.l1-rpc-url }}
+  l2-rpc-url:
+    description: "Host RPC URL for the L2"
+    value: ${{ steps.resolve.outputs.l2-rpc-url }}
+  l3-rpc-url:
+    description: "Host RPC URL for the L3"
+    value: ${{ steps.resolve.outputs.l3-rpc-url }}
+  variant:
+    description: "Resolved runtime variant"
+    value: ${{ steps.resolve.outputs.variant }}
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      shell: bash
+      env:
+        INPUT_CONTAINER_NAME: ${{ inputs.container-name }}
+        INPUT_FEE_TOKEN_DECIMALS: ${{ inputs.fee-token-decimals }}
+        INPUT_IMAGE_REPOSITORY: ${{ inputs.image-repository }}
+        INPUT_L3_NODE: ${{ inputs.l3-node }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        INPUT_VERSION: ${{ inputs.version }}
+        GITHUB_WORKSPACE: ${{ github.workspace }}
+      run: node "${{ github.action_path }}/scripts/action/resolve.mjs"
+
+    - name: Log in to GHCR
+      if: ${{ startsWith(inputs.image-repository, 'ghcr.io/') }}
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.github-token }}" ]; then
+          echo "github-token is required for ghcr.io images" >&2
+          exit 1
+        fi
+        echo "${{ inputs.github-token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+    - name: Pull runtime image
+      if: ${{ !startsWith(inputs.image-repository, 'local/') }}
+      shell: bash
+      run: docker pull "${{ steps.resolve.outputs.image-ref }}"
+
+    - name: Boot runtime image
+      shell: bash
+      env:
+        INPUT_CONTAINER_NAME: ${{ inputs.container-name }}
+        INPUT_FEE_TOKEN_DECIMALS: ${{ inputs.fee-token-decimals }}
+        INPUT_IMAGE_REPOSITORY: ${{ inputs.image-repository }}
+        INPUT_L3_NODE: ${{ inputs.l3-node }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        INPUT_STARTUP_TIMEOUT_SECONDS: ${{ inputs.startup-timeout-seconds }}
+        INPUT_VERSION: ${{ inputs.version }}
+        GITHUB_WORKSPACE: ${{ github.workspace }}
+      run: node "${{ github.action_path }}/scripts/action/run.mjs"

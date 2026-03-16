@@ -1,0 +1,33 @@
+{
+  "l3Network": {
+    "parentChainId": 412346,
+    "chainId": 412347,
+    "confirmPeriodBlocks": 1,
+    "ethBridge": {
+      "bridge": "0x3D9dc0C056b556A7C6a69e3bd0Ce2E96A01eF8D3",
+      "inbox": "0x3FEC3ceD2aF6e3b2BCaefFb72897aDa9928338EF",
+      "outbox": "0xfCFf735DA25f041A97669767FEF7d36871D4cE5e",
+      "rollup": "0xA9d7045AfF7f46cf8DA991e652c025D0D9412aeD",
+      "sequencerInbox": "0x5dc77730B463298f70a2Df772C2009a1Ac072B9A"
+    },
+    "isCustom": true,
+    "name": "L3-Testnode",
+    "retryableLifetimeSeconds": 604800,
+    "isTestnet": true,
+    "tokenBridge": {
+      "parentCustomGateway": "0x3961b39DbEF440afF6717658E62A25342728E453",
+      "parentErc20Gateway": "0x4682E88C76cF5D53B180ABcbec7997017C598FEA",
+      "parentGatewayRouter": "0x869686f05Aff76CF695371Ef3C5C02635e5012a2",
+      "parentMultiCall": "0xF6FBB5343983412632b83eA229edbAd8c778a820",
+      "parentWeth": "0xbF66e61764cc108136c33EdcaE5991F47F956D86",
+      "parentWethGateway": "0xd986E056c17A88fA16A14e60df3c301f697A08ad",
+      "childCustomGateway": "0xc81658eFd5a7d84Ae6aF44FF22aff363338CDdD8",
+      "childErc20Gateway": "0x2b38404373A30756D28c80D716412DC581ce3d2C",
+      "childGatewayRouter": "0x5048d30876E09388fC939C259787d92D6ed84b4d",
+      "childMultiCall": "0x4d039E4ec252FE14D34A51C1030d39C978B02c2E",
+      "childProxyAdmin": "0x07A4724e5C284DF3BA46B71552cc772eE1101E4b",
+      "childWeth": "0x59698025a1926c4865a62d3141141792367Ddc91",
+      "childWethGateway": "0x83316998493353b1FAd29Bf4b24636c9f906De09"
+    }
+  }
+}

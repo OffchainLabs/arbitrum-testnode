@@ -5,4 +5,5 @@ config/*.yaml
 config/anvil-state
 config/runs/
 config/snapshots/
+.ci-runtime-context/
 *.log

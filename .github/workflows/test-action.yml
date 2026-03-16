@@ -1,0 +1,46 @@
+name: Test Action
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test-l3-eth-action:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Prepare runtime context
+        run: node scripts/ci/prepare-runtime-context.mjs --variant l3-eth --snapshot-id default
+
+      - name: Build local runtime image
+        run: docker build -f docker/ci-runtime.Dockerfile -t local/arbitrum-testnode-ci:${{ github.sha }}-l3-eth .
+
+      - name: Run action
+        id: action
+        uses: ./
+        with:
+          image-repository: local/arbitrum-testnode-ci
+          l3-node: true
+          version: ${{ github.sha }}
+
+      - name: Validate outputs
+        run: |
+          test -f "${{ steps.action.outputs.local-network-path }}"
+          test -f "${{ steps.action.outputs.l1l2-network-path }}"
+          test -f "${{ steps.action.outputs.l2l3-network-path }}"
+          curl -s -X POST -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' \
+            "${{ steps.action.outputs.l1-rpc-url }}"
+          curl -s -X POST -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' \
+            "${{ steps.action.outputs.l2-rpc-url }}"
+          curl -s -X POST -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' \
+            "${{ steps.action.outputs.l3-rpc-url }}"

@@ -50,6 +50,7 @@ import {
 	restoreSnapshot,
 	verifySnapshotSemanticState,
 } from "../snapshot.js";
+import { installSnapshotRelease } from "../snapshot-release.js";
 
 const PROJECT_ROOT = resolve(import.meta.dirname, "../..");
 const CONFIG_DIR = resolve(PROJECT_ROOT, "config");
@@ -811,10 +812,17 @@ export const initCli = Cli.create("init", {
 			.boolean()
 			.optional()
 			.describe("Force a full rebuild instead of restoring the default snapshot"),
+		snapshotVersion: z
+			.string()
+			.optional()
+			.describe("Snapshot release tag to install when the default snapshot is missing"),
 	}),
 	async run(c) {
 		if (c.options.background && !c.options.foreground) {
-			const run = startDetachedInitRun(CONFIG_DIR, PROJECT_ROOT);
+			const extraArgs = c.options.snapshotVersion
+				? ["--snapshot-version", c.options.snapshotVersion]
+				: [];
+			const run = startDetachedInitRun(CONFIG_DIR, PROJECT_ROOT, extraArgs);
 			return {
 				success: true,
 				detached: true,
@@ -828,6 +836,19 @@ export const initCli = Cli.create("init", {
 
 		try {
 			const totalStart = Date.now();
+			if (!c.options.rebuild && !hasSnapshot(CONFIG_DIR, DEFAULT_SNAPSHOT_ID)) {
+				console.log(
+					`[init] Installing snapshot release ${c.options.snapshotVersion ?? "latest"}...`,
+				);
+				const install = await installSnapshotRelease({
+					composeFile: COMPOSE_FILE,
+					configDir: CONFIG_DIR,
+					...(c.options.snapshotVersion ? { version: c.options.snapshotVersion } : {}),
+				});
+				console.log(
+					`[init] Installed snapshot ${install.releaseTag ?? install.archiveName} from ${install.sourceUrl}`,
+				);
+			}
 			const shouldRestoreSnapshot =
 				!c.options.rebuild && hasSnapshot(CONFIG_DIR, DEFAULT_SNAPSHOT_ID);
 

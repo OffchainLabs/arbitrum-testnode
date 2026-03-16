@@ -270,12 +270,17 @@ export function finishActiveRun(status: RunStatus, options?: {
 	activeRunContext = null;
 }
 
-export function startDetachedInitRun(configDir: string, projectRoot: string): RunRecord {
-	const run = createRunRecord(configDir, "testnode", ["init", "--foreground"]);
+export function startDetachedInitRun(
+	configDir: string,
+	projectRoot: string,
+	extraArgs: string[] = [],
+): RunRecord {
+	const runArgs = ["init", "--foreground", ...extraArgs];
+	const run = createRunRecord(configDir, "testnode", runArgs);
 	const entry = getScriptEntry(projectRoot);
 	const useTsx = entry.endsWith(".ts");
 	const command = useTsx ? "npx" : process.execPath;
-	const args = useTsx ? ["tsx", entry, "init", "--foreground"] : [entry, "init", "--foreground"];
+	const args = useTsx ? ["tsx", entry, ...runArgs] : [entry, ...runArgs];
 	const stdout = openSync(run.paths.logFile, "a");
 	const stderr = openSync(run.paths.logFile, "a");
 	const child = spawn(command, args, {

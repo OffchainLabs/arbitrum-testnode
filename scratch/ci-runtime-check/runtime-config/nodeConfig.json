@@ -1,0 +1,65 @@
+{
+  "chain": {
+    "info-json": "[{\"chain-id\":412347,\"parent-chain-id\":412346,\"parent-chain-is-arbitrum\":true,\"chain-name\":\"L3-Testnode\",\"chain-config\":{\"chainId\":412347,\"homesteadBlock\":0,\"daoForkSupport\":true,\"eip150Block\":0,\"eip150Hash\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"eip155Block\":0,\"eip158Block\":0,\"byzantiumBlock\":0,\"constantinopleBlock\":0,\"petersburgBlock\":0,\"istanbulBlock\":0,\"muirGlacierBlock\":0,\"berlinBlock\":0,\"londonBlock\":0,\"clique\":{\"period\":0,\"epoch\":0},\"arbitrum\":{\"EnableArbOS\":true,\"AllowDebugPrecompiles\":true,\"DataAvailabilityCommittee\":false,\"InitialArbOSVersion\":40,\"InitialChainOwner\":\"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\",\"GenesisBlockNum\":0}},\"rollup\":{\"bridge\":\"0x3D9dc0C056b556A7C6a69e3bd0Ce2E96A01eF8D3\",\"inbox\":\"0x3FEC3ceD2aF6e3b2BCaefFb72897aDa9928338EF\",\"sequencer-inbox\":\"0x5dc77730B463298f70a2Df772C2009a1Ac072B9A\",\"rollup\":\"0xA9d7045AfF7f46cf8DA991e652c025D0D9412aeD\",\"validator-wallet-creator\":\"0x4A679253410272dd5232B3Ff7cF5dbB88f295319\",\"stake-token\":\"0x0000000000000000000000000000000000000000\",\"deployed-at\":48}}]",
+    "name": "L3-Testnode"
+  },
+  "parent-chain": {
+    "connection": {
+      "url": "http://127.0.0.1:8547"
+    }
+  },
+  "http": {
+    "addr": "0.0.0.0",
+    "port": 8449,
+    "vhosts": [
+      "*"
+    ],
+    "corsdomain": [
+      "*"
+    ],
+    "api": [
+      "eth",
+      "net",
+      "web3",
+      "arb",
+      "debug"
+    ]
+  },
+  "node": {
+    "sequencer": true,
+    "delayed-sequencer": {
+      "enable": true,
+      "use-merge-finality": false,
+      "finalize-distance": 1
+    },
+    "batch-poster": {
+      "max-size": 90000,
+      "enable": true,
+      "parent-chain-wallet": {
+        "private-key": "47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"
+      }
+    },
+    "staker": {
+      "enable": true,
+      "strategy": "MakeNodes",
+      "parent-chain-wallet": {
+        "private-key": "8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba"
+      }
+    },
+    "dangerous": {
+      "no-sequencer-coordinator": true,
+      "disable-blob-reader": false
+    }
+  },
+  "execution": {
+    "forwarding-target": "",
+    "sequencer": {
+      "enable": true,
+      "max-tx-data-size": 85000,
+      "max-block-speed": "250ms"
+    },
+    "caching": {
+      "archive": true
+    }
+  }
+}
