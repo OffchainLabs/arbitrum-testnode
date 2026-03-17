@@ -16,7 +16,7 @@ describe("resolveVariant", () => {
 	});
 
 	it("uses the custom gas token variants when decimals are provided", () => {
-		expect(resolveVariant({ feeTokenDecimals: "6", l3Node: "true" })).toBe("l3-custom-6");
+		expect(resolveVariant({ feeTokenDecimals: "16", l3Node: "true" })).toBe("l3-custom-16");
 		expect(resolveVariant({ feeTokenDecimals: "18", l3Node: "true" })).toBe("l3-custom-18");
 		expect(resolveVariant({ feeTokenDecimals: "20", l3Node: "true" })).toBe("l3-custom-20");
 	});

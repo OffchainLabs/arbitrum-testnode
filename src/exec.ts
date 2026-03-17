@@ -27,6 +27,7 @@ export function exec(
 	const result: SpawnSyncReturns<string> = spawnSync(command, args, {
 		cwd: options?.cwd,
 		timeout,
+		maxBuffer: 50 * 1024 * 1024,
 		encoding: "utf-8",
 		stdio: ["pipe", "pipe", "pipe"],
 	});

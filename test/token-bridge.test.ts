@@ -147,9 +147,9 @@ describe("deployL2L3TokenBridge", () => {
 				fs.writeFileSync(
 					path.join(outputDir, "bridgeUiConfig.json"),
 					JSON.stringify({
-						chainName: "L3-Testnode",
+						chainName: "orbit-dev-test",
 						parentChainId: 412346,
-						chainId: 412347,
+						chainId: 333333,
 						rollup: "0x1111111111111111111111111111111111111111",
 						parentChainRpc: "http://127.0.0.1:8547",
 						chainRpc: "http://127.0.0.1:8549",
@@ -250,7 +250,7 @@ describe("deployL2L3TokenBridge", () => {
 			};
 		};
 		expect(l2l3Network.l3Network.parentChainId).toBe(412346);
-		expect(l2l3Network.l3Network.chainId).toBe(412347);
+		expect(l2l3Network.l3Network.chainId).toBe(333333);
 		expect(l2l3Network.l3Network.tokenBridge.parentGatewayRouter).toBe(
 			"0xa111111111111111111111111111111111111111",
 		);
@@ -271,7 +271,7 @@ describe("deployL2L3TokenBridge", () => {
 				chainId: number;
 			};
 		};
-		expect(localNetwork.l3Network.chainId).toBe(412347);
+		expect(localNetwork.l3Network.chainId).toBe(333333);
 
 		const spec = JSON.parse(
 			fs.readFileSync(path.join(tmpDir, "l2-l3-chain-config.json"), "utf-8"),

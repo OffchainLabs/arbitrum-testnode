@@ -171,9 +171,7 @@ function topUpIfNeeded(
 		return;
 	}
 
-	const senderAddress = accounts.deployer.privateKey === senderKey
-		? accounts.deployer.address
-		: accounts.fundsProvider.address;
+	const senderAddress = accounts.funnel.address;
 	const senderBalanceWei = getBalanceWei(senderAddress, rpcUrl);
 	const topUpWei = clampDepositAmount({
 		balanceWei: senderBalanceWei,
@@ -342,51 +340,51 @@ function setL3ChainOwners(l3RpcUrl: string, upgradeExecutorAddress: string): voi
 		"--rpc-url",
 		l3RpcUrl,
 		"--private-key",
-		accounts.deployer.privateKey,
+		accounts.l3owner.privateKey,
 	]);
 
 	cast([
 		"send",
 		ARB_OWNER,
 		"removeChainOwner(address)",
-		accounts.deployer.address,
+		accounts.l3owner.address,
 		"--rpc-url",
 		l3RpcUrl,
 		"--private-key",
-		accounts.deployer.privateKey,
+		accounts.l3owner.privateKey,
 	]);
 }
 
 export function ensureL1L2TokenBridgeFunding(l1RpcUrl: string, l2RpcUrl: string): void {
 	topUpIfNeeded(
-		accounts.fundsProvider.address,
+		accounts.funnel.address,
 		TOKENBRIDGE_DEPLOYER_TARGET_L1_WEI,
 		l1RpcUrl,
-		accounts.deployer.privateKey,
+		accounts.funnel.privateKey,
 		"tokenbridge deployer on L1",
 	);
 	topUpIfNeeded(
-		accounts.fundsProvider.address,
+		accounts.funnel.address,
 		TOKENBRIDGE_DEPLOYER_TARGET_L2_WEI,
 		l2RpcUrl,
-		accounts.deployer.privateKey,
+		accounts.funnel.privateKey,
 		"tokenbridge deployer on L2",
 	);
 }
 
 export function ensureL2L3TokenBridgeFunding(l2RpcUrl: string, l3RpcUrl: string): void {
 	topUpIfNeeded(
-		accounts.fundsProvider.address,
+		accounts.userTokenBridgeDeployer.address,
 		TOKENBRIDGE_DEPLOYER_TARGET_L2_WEI,
 		l2RpcUrl,
-		accounts.deployer.privateKey,
+		accounts.funnel.privateKey,
 		"tokenbridge deployer on L2",
 	);
 	topUpIfNeeded(
-		accounts.fundsProvider.address,
+		accounts.userTokenBridgeDeployer.address,
 		TOKENBRIDGE_DEPLOYER_TARGET_L3_WEI,
 		l3RpcUrl,
-		accounts.deployer.privateKey,
+		accounts.funnel.privateKey,
 		"tokenbridge deployer on L3",
 	);
 }
@@ -404,7 +402,7 @@ export function deployL1L2TokenBridge(params: BridgeDeployParams): void {
 	});
 	waitForCreatorSettlement();
 	const spec = createChainSpec({
-		chainName: "L2-Testnode",
+		chainName: "arb-dev-test",
 		chainId: 412346,
 		parentChainId: 1337,
 		parentRpc,
@@ -424,7 +422,7 @@ export function deployL1L2TokenBridge(params: BridgeDeployParams): void {
 				parentRpc,
 			),
 		}),
-		owner: accounts.deployer.address,
+		owner: accounts.l2owner.address,
 	});
 	writeChainSpecFile(specPath, spec);
 	deployChildChainFromSpec(specPath, params.configDir, params.rollupOwnerKey, "l2");
@@ -450,8 +448,8 @@ export function deployL2L3TokenBridge(params: BridgeDeployParams): void {
 	});
 	waitForCreatorSettlement();
 	const spec = createChainSpec({
-		chainName: "L3-Testnode",
-		chainId: 412347,
+		chainName: "orbit-dev-test",
+		chainId: 333333,
 		parentChainId: 412346,
 		parentRpc,
 		chainRpc: childRpc,
@@ -474,7 +472,7 @@ export function deployL2L3TokenBridge(params: BridgeDeployParams): void {
 			addChainOwners: [readDeploymentArtifact(params.configDir, "l3_deployment.json")["upgrade-executor"]],
 			removeDeployer: true,
 		},
-		owner: accounts.deployer.address,
+		owner: accounts.l3owner.address,
 	});
 	writeChainSpecFile(specPath, spec);
 	deployChildChainFromSpec(specPath, params.configDir, params.rollupOwnerKey, "l3");

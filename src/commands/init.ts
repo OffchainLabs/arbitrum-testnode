@@ -67,17 +67,13 @@ const L2_RPC_INTERNAL = "http://sequencer:8547";
 
 const ROLLUPCREATOR_IMAGE = "nitro-testnode-rollupcreator:latest";
 const WASM_MODULE_ROOT = "0x8a7513bf7bb3e3db04b0d982d0e973bcf57bf8b88aef7c6d03dba3a81a56a499";
-const L2_DEPOSIT_VALUE = "300ether";
+const L2_DEPOSIT_VALUE = "100000ether";
 const L2_DEPOSIT_READY_THRESHOLD_WEI = 250n * 10n ** 18n;
 const L3_DEPOSIT_TARGET_WEI = 50n * 10n ** 18n;
 const L3_DEPOSIT_RESERVE_WEI = 1n * 10n ** 18n;
 const L3_DEPOSIT_READY_THRESHOLD_WEI = 10n * 10n ** 18n;
 const L3_PARENT_CHAIN_FUNDING_RESERVE_WEI = 5n * 10n ** 16n;
 const L2_VALIDATOR_GAS_TARGET_WEI = 1n * 10n ** 18n;
-const L2_AUTHORIZED_VALIDATOR = {
-	address: "0x6A568afe0f82d34759347bb36F14A6bB171d2CBe",
-	privateKey: "0x182fecf15bdf909556a0f617a63e05ab22f1493d25a9f1e27c228266c772a890",
-} as const;
 
 const DOCKER_OPTS = { composeFile: COMPOSE_FILE, projectName: "arbitrum-testnode" };
 
@@ -140,7 +136,7 @@ function sendZeroAddressTransfer(rpcUrl: string, value = "1wei"): void {
 			"--rpc-url",
 			rpcUrl,
 			"--private-key",
-			accounts.deployer.privateKey,
+			accounts.funnel.privateKey,
 		]);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -191,9 +187,7 @@ function topUpEthIfNeeded(
 		return;
 	}
 
-	const senderAddress = senderKey === accounts.deployer.privateKey
-		? accounts.deployer.address
-		: accounts.fundsProvider.address;
+	const senderAddress = accounts.funnel.address;
 	const senderBalanceWei = getBalanceWei(senderAddress, rpcUrl);
 	const depositWei = clampDepositAmount({
 		balanceWei: senderBalanceWei,
@@ -220,10 +214,10 @@ async function ensureL2ValidatorFunding(
 	validatorWalletCreatorAddress: string,
 ): Promise<void> {
 	topUpEthIfNeeded(
-		L2_AUTHORIZED_VALIDATOR.address,
+		accounts.validator.address,
 		L2_VALIDATOR_GAS_TARGET_WEI,
 		L1_RPC,
-		accounts.deployer.privateKey,
+		accounts.funnel.privateKey,
 		"L2 validator gas",
 	);
 
@@ -238,7 +232,7 @@ async function ensureL2ValidatorFunding(
 	);
 	const currentStakeWei = getErc20BalanceWei(
 		stakeTokenAddress,
-		L2_AUTHORIZED_VALIDATOR.address,
+		accounts.validator.address,
 		L1_RPC,
 	);
 	if (currentStakeWei >= requiredStakeWei) {
@@ -246,9 +240,9 @@ async function ensureL2ValidatorFunding(
 	}
 
 	const neededStakeWei = requiredStakeWei - currentStakeWei;
-	const deployerStakeWei = getErc20BalanceWei(stakeTokenAddress, accounts.deployer.address, L1_RPC);
-	if (deployerStakeWei < neededStakeWei) {
-		const shortfallWei = neededStakeWei - deployerStakeWei;
+	const funderStakeWei = getErc20BalanceWei(stakeTokenAddress, accounts.funnel.address, L1_RPC);
+	if (funderStakeWei < neededStakeWei) {
+		const shortfallWei = neededStakeWei - funderStakeWei;
 		console.log(`[init] Wrapping ${shortfallWei} wei into stake token for L2 validator`);
 		cast([
 			"send",
@@ -259,7 +253,7 @@ async function ensureL2ValidatorFunding(
 			"--rpc-url",
 			L1_RPC,
 			"--private-key",
-			accounts.deployer.privateKey,
+			accounts.funnel.privateKey,
 		]);
 	}
 
@@ -268,12 +262,12 @@ async function ensureL2ValidatorFunding(
 		"send",
 		stakeTokenAddress,
 		"transfer(address,uint256)",
-		L2_AUTHORIZED_VALIDATOR.address,
+		accounts.validator.address,
 		neededStakeWei.toString(),
 		"--rpc-url",
 		L1_RPC,
 		"--private-key",
-		accounts.deployer.privateKey,
+		accounts.funnel.privateKey,
 	]);
 
 	await ensureValidatorWalletStaked({
@@ -281,9 +275,9 @@ async function ensureL2ValidatorFunding(
 		creatorAddress: validatorWalletCreatorAddress as `0x${string}`,
 		rollupAddress: rollupAddress as `0x${string}`,
 		stakeTokenAddress: stakeTokenAddress as `0x${string}`,
-		validatorAddress: L2_AUTHORIZED_VALIDATOR.address,
-		validatorKey: L2_AUTHORIZED_VALIDATOR.privateKey,
-		funderKey: accounts.deployer.privateKey,
+		validatorAddress: accounts.validator.address,
+		validatorKey: accounts.validator.privateKey,
+		funderKey: accounts.funnel.privateKey,
 		requiredStakeWei,
 	});
 }
@@ -295,7 +289,7 @@ function fundL3ParentChainAccounts(): void {
 			console.log(`[init] ${transfer.label} already funded on L2 parent chain`);
 			continue;
 		}
-		const senderBalanceWei = getBalanceWei(accounts.deployer.address, L2_RPC);
+		const senderBalanceWei = getBalanceWei(accounts.funnel.address, L2_RPC);
 		let topUpWei: bigint;
 		try {
 			topUpWei = clampDepositAmount({
@@ -304,7 +298,7 @@ function fundL3ParentChainAccounts(): void {
 				reserveWei: L3_PARENT_CHAIN_FUNDING_RESERVE_WEI,
 			});
 		} catch {
-			console.warn(`[init] Skipping ${transfer.label} funding; deployer L2 balance is too low`);
+			console.warn(`[init] Skipping ${transfer.label} funding; funnel L2 balance is too low`);
 			continue;
 		}
 		console.log(`[init] Funding ${transfer.label} on L2 parent chain with ${topUpWei} wei`);
@@ -316,7 +310,7 @@ function fundL3ParentChainAccounts(): void {
 			"--rpc-url",
 			L2_RPC,
 			"--private-key",
-			accounts.deployer.privateKey,
+			accounts.funnel.privateKey,
 		]);
 	}
 }
@@ -404,17 +398,17 @@ function createL2DeploySteps(): Record<string, StepRunner> {
 		"deploy-l2-rollup": async (state) => {
 			writeChainConfig(CONFIG_DIR, "l2_chain_config.json", {
 				chainId: 412346,
-				owner: accounts.deployer.address,
+				owner: accounts.l2owner.address,
 			});
 			deployRollupViaDocker({
 				PARENT_CHAIN_RPC: L1_RPC_DOCKER,
-				DEPLOYER_PRIVKEY: accounts.deployer.privateKey,
+				DEPLOYER_PRIVKEY: accounts.l2owner.privateKey,
 				PARENT_CHAIN_ID: "1337",
-				CHILD_CHAIN_NAME: "L2-Testnode",
+				CHILD_CHAIN_NAME: "arb-dev-test",
 				MAX_DATA_SIZE: "117964",
-				OWNER_ADDRESS: accounts.deployer.address,
+				OWNER_ADDRESS: accounts.l2owner.address,
 				WASM_MODULE_ROOT: WASM_MODULE_ROOT,
-				SEQUENCER_ADDRESS: accounts.l2Sequencer.address,
+				SEQUENCER_ADDRESS: accounts.sequencer.address,
 				AUTHORIZE_VALIDATORS: "10",
 				CHILD_CHAIN_CONFIG_PATH: "/config/l2_chain_config.json",
 				CHAIN_DEPLOYMENT_INFO: "/config/l2_deployment.json",
@@ -444,7 +438,7 @@ function createL2DeploySteps(): Record<string, StepRunner> {
 					"--rollup",
 					rollupData["rollup"] as string,
 					"--chain-name",
-					"L2-Testnode",
+					"arb-dev-test",
 					"--parent-rpc",
 					L1_RPC,
 					"--parent-chain-id",
@@ -452,9 +446,9 @@ function createL2DeploySteps(): Record<string, StepRunner> {
 					"--parent-beacon-rpc",
 					"http://localhost:5555",
 					"--batch-poster-key",
-					accounts.l2Sequencer.privateKey,
+					accounts.sequencer.privateKey,
 					"--validator-key",
-					accounts.l2Validator.privateKey,
+					accounts.validator.privateKey,
 					"--output-dir",
 					CONFIG_DIR,
 					"--type",
@@ -471,9 +465,9 @@ function createL2DeploySteps(): Record<string, StepRunner> {
 				(rollupData["stakeToken"] as string | undefined) ?? ZERO_ADDRESS;
 			const patched = patchGeneratedL2NodeConfig(
 				config,
-				accounts.l2Sequencer.privateKey,
+				accounts.sequencer.privateKey,
 				stakeToken,
-				L2_AUTHORIZED_VALIDATOR.privateKey,
+				accounts.validator.privateKey,
 			);
 				writeFileSync(dest, `${JSON.stringify(patched, null, 2)}\n`, "utf-8");
 				if (stakeToken !== ZERO_ADDRESS) {
@@ -503,12 +497,12 @@ function createL2RuntimeSteps(): Record<string, StepRunner> {
 			if (!rollupData) {
 				throw new Error("Missing l2 rollup deployment data");
 			}
-			const currentL2BalanceWei = getBalanceWei(accounts.deployer.address, L2_RPC);
+			const currentL2BalanceWei = getBalanceWei(accounts.funnel.address, L2_RPC);
 			if (currentL2BalanceWei >= L2_DEPOSIT_READY_THRESHOLD_WEI) {
-				console.log("[init] L2 deployer already funded; skipping inbox deposit");
+				console.log("[init] L2 funnel already funded; skipping inbox deposit");
 				return markStepDone(state, "deposit-eth-to-l2", {
 					skipped: true,
-					reason: "l2 deployer already has balance",
+					reason: "l2 funnel already has balance",
 				});
 			}
 			const inbox = rollupData["inbox"] as string;
@@ -522,10 +516,10 @@ function createL2RuntimeSteps(): Record<string, StepRunner> {
 				"--rpc-url",
 				L1_RPC,
 				"--private-key",
-				accounts.deployer.privateKey,
+				accounts.funnel.privateKey,
 			]);
 			await waitForBalanceAtLeast(
-				accounts.deployer.address,
+				accounts.funnel.address,
 				L2_RPC,
 				L2_DEPOSIT_READY_THRESHOLD_WEI,
 			);
@@ -542,34 +536,67 @@ function createL2RuntimeSteps(): Record<string, StepRunner> {
 				compose: DOCKER_OPTS,
 				configDir: CONFIG_DIR,
 				rollupAddress: rollupData["rollup"] as string,
-				rollupOwnerKey: accounts.deployer.privateKey,
+				rollupOwnerKey: accounts.l2owner.privateKey,
 				parentRpc: L1_RPC_DOCKER,
 				childRpc: L2_RPC_INTERNAL,
-				parentKey: accounts.fundsProvider.privateKey,
-				childKey: accounts.fundsProvider.privateKey,
+				parentKey: accounts.funnel.privateKey,
+				childKey: accounts.funnel.privateKey,
 			});
 			return markStepDone(state, "deploy-l2-token-bridge");
 		},
 	};
 }
 
+function fundL3DeployerAccounts(): void {
+	console.log("[init] Funding L3 deployer accounts on L2");
+	for (const { address, label, amount } of [
+		{ address: accounts.l3owner.address, label: "l3owner", amount: "1000ether" },
+		{ address: accounts.userTokenBridgeDeployer.address, label: "userTokenBridgeDeployer", amount: "100ether" },
+	]) {
+		cast([
+			"send",
+			address,
+			"--value",
+			amount,
+			"--rpc-url",
+			L2_RPC,
+			"--private-key",
+			accounts.funnel.privateKey,
+		]);
+		console.log(`[init] Funded ${label} on L2 with ${amount}`);
+	}
+	// Also fund userTokenBridgeDeployer on L1
+	cast([
+		"send",
+		accounts.userTokenBridgeDeployer.address,
+		"--value",
+		"100ether",
+		"--rpc-url",
+		L1_RPC,
+		"--private-key",
+		accounts.funnel.privateKey,
+	]);
+	console.log("[init] Funded userTokenBridgeDeployer on L1 with 100ether");
+}
+
 function createL3Steps(): Record<string, StepRunner> {
 	return {
 		"deploy-l3-rollup": async (state) => {
+			fundL3DeployerAccounts();
 			writeChainConfig(CONFIG_DIR, "l3_chain_config.json", {
-				chainId: 412347,
-				owner: accounts.deployer.address,
+				chainId: 333333,
+				owner: accounts.l3owner.address,
 			});
 			applyGasEstimationWorkaround();
 			deployRollupViaDocker({
 				PARENT_CHAIN_RPC: L2_RPC_DOCKER,
-				DEPLOYER_PRIVKEY: accounts.deployer.privateKey,
+				DEPLOYER_PRIVKEY: accounts.l3owner.privateKey,
 				PARENT_CHAIN_ID: "412346",
-				CHILD_CHAIN_NAME: "L3-Testnode",
-				MAX_DATA_SIZE: "117964",
-				OWNER_ADDRESS: accounts.deployer.address,
+				CHILD_CHAIN_NAME: "orbit-dev-test",
+				MAX_DATA_SIZE: "104857",
+				OWNER_ADDRESS: accounts.l3owner.address,
 				WASM_MODULE_ROOT: WASM_MODULE_ROOT,
-				SEQUENCER_ADDRESS: accounts.l3Sequencer.address,
+				SEQUENCER_ADDRESS: accounts.l3sequencer.address,
 				AUTHORIZE_VALIDATORS: "10",
 				CHILD_CHAIN_CONFIG_PATH: "/config/l3_chain_config.json",
 				CHAIN_DEPLOYMENT_INFO: "/config/l3_deployment.json",
@@ -599,15 +626,15 @@ function createL3Steps(): Record<string, StepRunner> {
 					"--rollup",
 					rollupData["rollup"] as string,
 					"--chain-name",
-					"L3-Testnode",
+					"orbit-dev-test",
 					"--parent-rpc",
 					L2_RPC,
 					"--parent-chain-id",
 					"412346",
 					"--batch-poster-key",
-					accounts.l3Sequencer.privateKey,
+					accounts.l3sequencer.privateKey,
 					"--validator-key",
-					accounts.l3Validator.privateKey,
+					accounts.l3owner.privateKey,
 					"--output-dir",
 					CONFIG_DIR,
 					"--type",
@@ -623,7 +650,7 @@ function createL3Steps(): Record<string, StepRunner> {
 				config,
 				L2_RPC_INTERNAL,
 				false,
-				accounts.l3Sequencer.privateKey,
+				accounts.l3sequencer.privateKey,
 			);
 				writeFileSync(dest, JSON.stringify(patched, null, 2));
 				return markStepDone(state, "generate-l3-config");
@@ -658,9 +685,9 @@ function createL3Steps(): Record<string, StepRunner> {
 							creatorAddress: validatorWalletCreator as `0x${string}`,
 							rollupAddress: rollupData["rollup"] as `0x${string}`,
 							stakeTokenAddress: stakeToken as `0x${string}`,
-							validatorAddress: accounts.l3Validator.address,
-							validatorKey: accounts.l3Validator.privateKey,
-							funderKey: accounts.deployer.privateKey,
+							validatorAddress: accounts.validator.address,
+							validatorKey: accounts.validator.privateKey,
+							funderKey: accounts.funnel.privateKey,
 							requiredStakeWei,
 						});
 					}
@@ -676,16 +703,16 @@ function createL3Steps(): Record<string, StepRunner> {
 			if (!rollupData) {
 				throw new Error("Missing l3 rollup deployment data");
 			}
-			const existingL3BalanceWei = getBalanceWei(accounts.deployer.address, L3_RPC);
+			const existingL3BalanceWei = getBalanceWei(accounts.funnel.address, L3_RPC);
 			if (existingL3BalanceWei >= L3_DEPOSIT_READY_THRESHOLD_WEI) {
-				console.log("[init] L3 deployer already funded; skipping inbox deposit");
+				console.log("[init] L3 funnel already funded; skipping inbox deposit");
 				return markStepDone(state, "deposit-eth-to-l3", {
 					skipped: true,
-					reason: "l3 deployer already has balance",
+					reason: "l3 funnel already has balance",
 				});
 			}
 			const inbox = rollupData["inbox"] as string;
-			const balanceWei = getBalanceWei(accounts.deployer.address, L2_RPC);
+			const balanceWei = getBalanceWei(accounts.funnel.address, L2_RPC);
 			const depositWei = clampDepositAmount({
 				balanceWei,
 				desiredWei: L3_DEPOSIT_TARGET_WEI,
@@ -701,10 +728,10 @@ function createL3Steps(): Record<string, StepRunner> {
 				"--rpc-url",
 				L2_RPC,
 				"--private-key",
-				accounts.deployer.privateKey,
+				accounts.funnel.privateKey,
 			]);
 			await waitForBalanceAtLeast(
-				accounts.deployer.address,
+				accounts.funnel.address,
 				L3_RPC,
 				L3_DEPOSIT_READY_THRESHOLD_WEI,
 			);
@@ -720,11 +747,11 @@ function createL3Steps(): Record<string, StepRunner> {
 				compose: DOCKER_OPTS,
 				configDir: CONFIG_DIR,
 				rollupAddress: rollupData["rollup"] as string,
-				rollupOwnerKey: accounts.deployer.privateKey,
+				rollupOwnerKey: accounts.l3owner.privateKey,
 				parentRpc: L2_RPC_INTERNAL,
 				childRpc: "http://l3node:8547",
-				parentKey: accounts.fundsProvider.privateKey,
-				childKey: accounts.fundsProvider.privateKey,
+				parentKey: accounts.userTokenBridgeDeployer.privateKey,
+				childKey: accounts.userTokenBridgeDeployer.privateKey,
 					parentWethOverride: getL2ChildWeth(CONFIG_DIR),
 				});
 				setL3StakerEnabled(true);

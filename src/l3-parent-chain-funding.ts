@@ -11,14 +11,14 @@ const ONE_ETH_WEI = 10n ** 18n;
 export function getL3ParentChainFundingPlan(): ParentChainFundingTransfer[] {
 	return [
 		{
-			address: accounts.l3BatchPoster.address,
+			address: accounts.l3sequencer.address,
 			amountWei: ONE_ETH_WEI,
-			label: "l3BatchPoster",
+			label: "l3sequencer",
 		},
 		{
-			address: accounts.l3Validator.address,
+			address: accounts.validator.address,
 			amountWei: ONE_ETH_WEI,
-			label: "l3Validator",
+			label: "validator",
 		},
 	];
 }

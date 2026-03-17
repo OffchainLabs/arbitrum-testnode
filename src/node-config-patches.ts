@@ -123,7 +123,7 @@ export function patchGeneratedL3NodeConfig(
 
 	next["ensure-rollup-deployment"] = false;
 	delete chain["info-json"];
-	chain["id"] = 412347;
+	chain["id"] = 333333;
 	chain["info-files"] = ["/config/l3_chain_info.json"];
 	parentConnection["url"] = parentChainUrl;
 	if (batchPosterPrivateKey) {

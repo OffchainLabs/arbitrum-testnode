@@ -99,8 +99,8 @@ describe("patchGeneratedL3NodeConfig", () => {
 	it("converts the generated config into the L3 runtime shape", () => {
 		const input = {
 			chain: {
-				"info-json": '[{"chain-id":412347}]',
-				name: "L3-Testnode",
+				"info-json": '[{"chain-id":333333}]',
+				name: "orbit-dev-test",
 			},
 			"parent-chain": {
 				connection: {
@@ -134,9 +134,9 @@ describe("patchGeneratedL3NodeConfig", () => {
 
 		expect(result["ensure-rollup-deployment"]).toBe(false);
 		expect(result.chain).toEqual({
-			id: 412347,
+			id: 333333,
 			"info-files": ["/config/l3_chain_info.json"],
-			name: "L3-Testnode",
+			name: "orbit-dev-test",
 		});
 		expect(result["parent-chain"]).toEqual({
 			connection: {

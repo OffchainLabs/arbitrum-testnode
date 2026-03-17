@@ -42,6 +42,7 @@ start_background /usr/local/bin/anvil \
 	--port 8545 \
 	--block-time 1 \
 	--chain-id 1337 \
+	--mnemonic "indoor dish desk flag debris potato excuse depart ticket judge file exit" \
 	--load-state "$DATA_ROOT/anvil-state"
 
 echo "waiting for anvil on port 8545..."

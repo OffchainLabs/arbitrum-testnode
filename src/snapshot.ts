@@ -234,7 +234,7 @@ export function buildSnapshotManifest(
 		chainIds: {
 			l1: 1337,
 			l2: 412346,
-			l3: 412347,
+			l3: 333333,
 		},
 		rollups: {
 			l2: l2Deployment.rollup,

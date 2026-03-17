@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import process from "node:process";
+import { MNEMONIC } from "./accounts.js";
 import { composeDown, composeUp, waitForRpc } from "./docker.js";
 import { exec } from "./exec.js";
 import { getAnvilStateDir } from "./snapshot.js";
@@ -45,7 +46,9 @@ export function startAnvilWithState(configDir: string): ChildProcess {
 			"--accounts",
 			"10",
 			"--balance",
-			"10000",
+			"1000000",
+			"--mnemonic",
+			MNEMONIC,
 			"--chain-id",
 			"1337",
 			"--state",

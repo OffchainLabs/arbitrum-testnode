@@ -6,14 +6,14 @@ describe("getL3ParentChainFundingPlan", () => {
 	it("funds the L3 batch poster and validator on the L2 parent chain", () => {
 		expect(getL3ParentChainFundingPlan()).toEqual([
 			{
-				address: accounts.l3BatchPoster.address,
+				address: accounts.l3sequencer.address,
 				amountWei: 10n ** 18n,
-				label: "l3BatchPoster",
+				label: "l3sequencer",
 			},
 			{
-				address: accounts.l3Validator.address,
+				address: accounts.validator.address,
 				amountWei: 10n ** 18n,
-				label: "l3Validator",
+				label: "validator",
 			},
 		]);
 	});
