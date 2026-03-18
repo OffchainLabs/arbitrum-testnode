@@ -16,9 +16,13 @@ import { clampDepositAmount } from "./deposit-amount.js";
 import { cast, execOrThrow } from "./exec.js";
 
 const ARB_OWNER = "0x0000000000000000000000000000000000000070" as const;
-const ADMIN_CLI_ENTRY =
-	process.env["ARBITRUM_ADMIN_CLI_ENTRY"] ??
-	"/Users/douglance/Developer/oc/arbitrum-chains-admin-cli/packages/cli/dist/index.cjs";
+function getAdminCliEntry(): string {
+	const entry = process.env["ARBITRUM_ADMIN_CLI_ENTRY"];
+	if (!entry) {
+		throw new Error("ARBITRUM_ADMIN_CLI_ENTRY env var is required");
+	}
+	return entry;
+}
 const ADMIN_CLI_NODE_BIN = (() => {
 	if (process.env["ARBITRUM_ADMIN_NODE_BIN"]) {
 		return process.env["ARBITRUM_ADMIN_NODE_BIN"];
@@ -152,7 +156,7 @@ function runCompose(
 }
 
 function runAdminCli(args: string[], timeoutMs = BRIDGE_DEPLOY_TIMEOUT_MS): string {
-	return execOrThrow(ADMIN_CLI_NODE_BIN, [ADMIN_CLI_ENTRY, ...args], { timeout: timeoutMs });
+	return execOrThrow(ADMIN_CLI_NODE_BIN, [getAdminCliEntry(), ...args], { timeout: timeoutMs });
 }
 
 function getBalanceWei(address: string, rpcUrl: string): bigint {

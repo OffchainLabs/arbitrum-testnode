@@ -74,16 +74,20 @@ describe("deployL2L3TokenBridge", () => {
 	let previousSdkPath: string | undefined;
 	let previousPortalPath: string | undefined;
 
+	let previousAdminCliEntry: string | undefined;
+
 	beforeEach(() => {
 		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "token-bridge-test-"));
 		vi.clearAllMocks();
 		previousSdkPath = process.env["ARBITRUM_SDK_LOCAL_NETWORK_PATH"];
 		previousPortalPath = process.env["ARBITRUM_PORTAL_LOCAL_NETWORK_PATH"];
+		previousAdminCliEntry = process.env["ARBITRUM_ADMIN_CLI_ENTRY"];
 		process.env["ARBITRUM_SDK_LOCAL_NETWORK_PATH"] = path.join(tmpDir, "sdk-localNetwork.json");
 		process.env["ARBITRUM_PORTAL_LOCAL_NETWORK_PATH"] = path.join(
 			tmpDir,
 			"portal-localNetwork.json",
 		);
+		process.env["ARBITRUM_ADMIN_CLI_ENTRY"] = "/test/admin-cli/dist/index.cjs";
 	});
 
 	afterEach(() => {
@@ -96,6 +100,11 @@ describe("deployL2L3TokenBridge", () => {
 			delete process.env["ARBITRUM_PORTAL_LOCAL_NETWORK_PATH"];
 		} else {
 			process.env["ARBITRUM_PORTAL_LOCAL_NETWORK_PATH"] = previousPortalPath;
+		}
+		if (previousAdminCliEntry === undefined) {
+			delete process.env["ARBITRUM_ADMIN_CLI_ENTRY"];
+		} else {
+			process.env["ARBITRUM_ADMIN_CLI_ENTRY"] = previousAdminCliEntry;
 		}
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 	});
@@ -215,13 +224,13 @@ describe("deployL2L3TokenBridge", () => {
 				"deploy:token-bridge-creator",
 			]),
 			expect.objectContaining({
-				cwd: "/Users/douglance/Developer/oc/token-bridge-contracts",
+				cwd: expect.any(String),
 			}),
 		);
 		expect(execOrThrow).toHaveBeenCalledWith(
 			expect.stringMatching(/(?:^node$|\/node$)/),
 			expect.arrayContaining([
-				"/Users/douglance/Developer/oc/arbitrum-chains-admin-cli/packages/cli/dist/index.cjs",
+				"/test/admin-cli/dist/index.cjs",
 				"deploy",
 				"child",
 				"--config",

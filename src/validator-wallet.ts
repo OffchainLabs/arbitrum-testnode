@@ -1,9 +1,13 @@
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 
-const NITRO_CONTRACTS_DIR =
-	process.env["NITRO_CONTRACTS_DIR"] ??
-	"/Users/douglance/Developer/oc/nitro-contracts";
+function getNitroContractsDir(): string {
+	const dir = process.env["NITRO_CONTRACTS_DIR"];
+	if (!dir) {
+		throw new Error("NITRO_CONTRACTS_DIR env var is required");
+	}
+	return dir;
+}
 
 const WALLET_CREATED_EVENT =
 	"event WalletCreated(address indexed walletAddress,address indexed executorAddress,address indexed ownerAddress,address adminProxy)";
@@ -24,7 +28,7 @@ type EthersModule = {
 };
 
 async function loadEthers(): Promise<any> {
-	const entry = resolve(NITRO_CONTRACTS_DIR, "node_modules/ethers/lib/index.js");
+	const entry = resolve(getNitroContractsDir(), "node_modules/ethers/lib/index.js");
 	const module = (await import(pathToFileURL(entry).href)) as EthersModule;
 	return module.ethers;
 }
