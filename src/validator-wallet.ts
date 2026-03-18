@@ -1,6 +1,5 @@
 import { encodeFunctionData, maxUint256, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { foundry } from "viem/chains";
 import {
 	erc20Abi,
 	publicClient,
@@ -64,7 +63,6 @@ async function resolveWalletAddress(
 
 	// No existing wallet — create one
 	const txHash = await validator.writeContract({
-		chain: foundry,
 		account: validatorAccount,
 		address: params.creatorAddress,
 		abi: validatorWalletCreatorAbi,
@@ -117,7 +115,6 @@ async function ensureWalletFunded(
 
 	if (funderBalance < shortfall) {
 		const depositHash = await funder.writeContract({
-			chain: foundry,
 			account: funderAccount,
 			address: params.stakeTokenAddress,
 			abi: erc20Abi,
@@ -128,7 +125,6 @@ async function ensureWalletFunded(
 	}
 
 	const transferHash = await funder.writeContract({
-		chain: foundry,
 		account: funderAccount,
 		address: params.stakeTokenAddress,
 		abi: erc20Abi,
@@ -189,7 +185,6 @@ export async function ensureValidatorWalletStaked(
 	});
 
 	const txHash = await validator.writeContract({
-		chain: foundry,
 		account: validatorAccount,
 		address: walletAddress,
 		abi: validatorWalletAbi,

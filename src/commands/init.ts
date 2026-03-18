@@ -5,7 +5,6 @@ import { Cli, z } from "incur";
 import type { Address } from "viem";
 import { parseEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { foundry } from "viem/chains";
 import { accounts } from "../accounts.js";
 import { writeChainConfig } from "../chain-config.js";
 import { clampDepositAmount } from "../deposit-amount.js";
@@ -137,7 +136,6 @@ async function sendZeroAddressTransfer(rpcUrl: string, value = 1n): Promise<void
 		const client = walletClient(rpcUrl, accounts.funnel.privateKey);
 		await client.sendTransaction({
 			account,
-			chain: foundry,
 			to: ZERO_ADDRESS as Address,
 			value,
 		});
@@ -196,7 +194,6 @@ async function topUpEthIfNeeded(
 	const client = walletClient(rpcUrl, senderKey);
 	await client.sendTransaction({
 		account,
-		chain: foundry,
 		to: address,
 		value: depositWei,
 	});
@@ -242,7 +239,6 @@ async function ensureL2ValidatorFunding(
 		const depositClient = walletClient(L1_RPC, accounts.funnel.privateKey);
 		await depositClient.writeContract({
 			account: funnelAccount,
-			chain: foundry,
 			address: stakeTokenAddress,
 			abi: erc20Abi,
 			functionName: "deposit",
@@ -255,7 +251,6 @@ async function ensureL2ValidatorFunding(
 	const transferClient = walletClient(L1_RPC, accounts.funnel.privateKey);
 	await transferClient.writeContract({
 		account: funnelAccount,
-		chain: foundry,
 		address: stakeTokenAddress,
 		abi: erc20Abi,
 		functionName: "transfer",
@@ -298,7 +293,6 @@ async function fundL3ParentChainAccounts(): Promise<void> {
 		const client = walletClient(L2_RPC, accounts.funnel.privateKey);
 		await client.sendTransaction({
 			account: funnelAccount,
-			chain: foundry,
 			to: transfer.address as Address,
 			value: topUpWei,
 		});
@@ -502,7 +496,6 @@ function createL2RuntimeSteps(): Record<string, StepRunner> {
 			const client = walletClient(L1_RPC, accounts.funnel.privateKey);
 			await client.writeContract({
 				account: funnelAccount,
-				chain: foundry,
 				address: inbox,
 				abi: inboxAbi,
 				functionName: "depositEth",
@@ -542,27 +535,35 @@ async function fundL3DeployerAccounts(): Promise<void> {
 			label: "userTokenBridgeDeployer",
 			amount: parseEther("100"),
 		},
+		{
+			address: accounts.userFeeTokenDeployer.address,
+			label: "userFeeTokenDeployer",
+			amount: parseEther("100"),
+		},
 	]) {
 		const funnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
 		const client = walletClient(L2_RPC, accounts.funnel.privateKey);
 		await client.sendTransaction({
 			account: funnelAccount,
-			chain: foundry,
 			to: address,
 			value: amount,
 		});
 		console.log(`[init] Funded ${label} on L2 with ${amount} wei`);
 	}
-	// Also fund userTokenBridgeDeployer on L1
+	// Also fund deployer accounts on L1
 	const funnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
 	const l1Client = walletClient(L1_RPC, accounts.funnel.privateKey);
-	await l1Client.sendTransaction({
-		account: funnelAccount,
-		chain: foundry,
-		to: accounts.userTokenBridgeDeployer.address,
-		value: parseEther("100"),
-	});
-	console.log("[init] Funded userTokenBridgeDeployer on L1 with 100ether");
+	for (const { address, label } of [
+		{ address: accounts.userTokenBridgeDeployer.address, label: "userTokenBridgeDeployer" },
+		{ address: accounts.userFeeTokenDeployer.address, label: "userFeeTokenDeployer" },
+	]) {
+		await l1Client.sendTransaction({
+			account: funnelAccount,
+			to: address,
+			value: parseEther("100"),
+		});
+		console.log(`[init] Funded ${label} on L1 with 100ether`);
+	}
 }
 
 function createL3Steps(): Record<string, StepRunner> {
@@ -703,7 +704,6 @@ function createL3Steps(): Record<string, StepRunner> {
 			const l2Client = walletClient(L2_RPC, accounts.funnel.privateKey);
 			await l2Client.writeContract({
 				account: funnelAccount,
-				chain: foundry,
 				address: inbox,
 				abi: inboxAbi,
 				functionName: "depositEth",

@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { foundry } from "viem/chains";
 import { accounts } from "./accounts.js";
 import {
 	ZERO_ADDRESS,
@@ -196,7 +195,6 @@ async function topUpIfNeeded(
 	const client = walletClient(rpcUrl, senderKey);
 	await client.sendTransaction({
 		account,
-		chain: foundry,
 		to: address,
 		value: topUpWei,
 	});
@@ -340,7 +338,6 @@ async function setL3ChainOwners(l3RpcUrl: string, upgradeExecutorAddress: Addres
 	const client = walletClient(l3RpcUrl, accounts.l3owner.privateKey);
 	await client.writeContract({
 		account: l3OwnerAccount,
-		chain: foundry,
 		address: ARB_OWNER,
 		abi: arbOwnerAbi,
 		functionName: "addChainOwner",
@@ -349,7 +346,6 @@ async function setL3ChainOwners(l3RpcUrl: string, upgradeExecutorAddress: Addres
 
 	await client.writeContract({
 		account: l3OwnerAccount,
-		chain: foundry,
 		address: ARB_OWNER,
 		abi: arbOwnerAbi,
 		functionName: "removeChainOwner",

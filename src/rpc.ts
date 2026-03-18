@@ -1,23 +1,48 @@
 import {
 	http,
 	type Address,
-	type PublicClient,
-	type WalletClient,
 	createPublicClient,
 	createWalletClient,
+	defineChain,
 	parseAbi,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { foundry } from "viem/chains";
 
-export function publicClient(rpcUrl: string): PublicClient {
-	return createPublicClient({ chain: foundry, transport: http(rpcUrl) });
+const l1Chain = defineChain({
+	id: 1337,
+	name: "L1 Local",
+	nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+	rpcUrls: { default: { http: ["http://127.0.0.1:8545"] } },
+});
+
+const l2Chain = defineChain({
+	id: 412346,
+	name: "L2 Local",
+	nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+	rpcUrls: { default: { http: ["http://127.0.0.1:8547"] } },
+});
+
+const l3Chain = defineChain({
+	id: 333333,
+	name: "L3 Local",
+	nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+	rpcUrls: { default: { http: ["http://127.0.0.1:8549"] } },
+});
+
+function chainForRpc(rpcUrl: string) {
+	if (rpcUrl.includes(":8547")) return l2Chain;
+	if (rpcUrl.includes(":8549")) return l3Chain;
+	return l1Chain;
 }
 
-export function walletClient(rpcUrl: string, privateKey: `0x${string}`): WalletClient {
+export function publicClient(rpcUrl: string) {
+	return createPublicClient({ chain: chainForRpc(rpcUrl), transport: http(rpcUrl) });
+}
+
+export function walletClient(rpcUrl: string, privateKey: `0x${string}`) {
 	return createWalletClient({
 		account: privateKeyToAccount(privateKey),
-		chain: foundry,
+		chain: chainForRpc(rpcUrl),
 		transport: http(rpcUrl),
 	});
 }
