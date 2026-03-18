@@ -1,5 +1,5 @@
-import { dirname, join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 
@@ -265,9 +265,7 @@ export function writeSdkNetworkFileFromBridgeUiConfig(
 			childErc20Gateway: tokenBridge.chain.standardGateway,
 			childGatewayRouter: tokenBridge.chain.router,
 			childMultiCall: tokenBridge.chain.multicall,
-			...(tokenBridge.chain.proxyAdmin
-				? { childProxyAdmin: tokenBridge.chain.proxyAdmin }
-				: {}),
+			...(tokenBridge.chain.proxyAdmin ? { childProxyAdmin: tokenBridge.chain.proxyAdmin } : {}),
 			childWeth: tokenBridge.chain.weth,
 			childWethGateway: tokenBridge.chain.wethGateway,
 		},

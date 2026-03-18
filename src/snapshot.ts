@@ -11,7 +11,9 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import type { Address } from "viem";
 import { execOrThrow } from "./exec.js";
+import { gatewayRouterAbi, publicClient } from "./rpc.js";
 
 export const SNAPSHOT_VERSION = 1;
 export const DEFAULT_SNAPSHOT_ID = "default";
@@ -220,10 +222,7 @@ export function buildSnapshotManifest(
 	const l2Deployment = parseDeploymentFile(configDir, "l2");
 	const l3Deployment = parseDeploymentFile(configDir, "l3");
 	const configChecksums = Object.fromEntries(
-		CRITICAL_CONFIG_FILES.map((filename) => [
-			filename,
-			sha256File(join(configDir, filename)),
-		]),
+		CRITICAL_CONFIG_FILES.map((filename) => [filename, sha256File(join(configDir, filename))]),
 	);
 
 	return {
@@ -304,11 +303,17 @@ export function captureSnapshot(
 	}
 
 	const manifest = buildSnapshotManifest(configDir, composeFile, snapshotId);
-	writeFileSync(getSnapshotManifestPath(configDir, snapshotId), `${JSON.stringify(manifest, null, 2)}\n`);
+	writeFileSync(
+		getSnapshotManifestPath(configDir, snapshotId),
+		`${JSON.stringify(manifest, null, 2)}\n`,
+	);
 	return manifest;
 }
 
-export function restoreSnapshot(configDir: string, snapshotId = DEFAULT_SNAPSHOT_ID): SnapshotManifest {
+export function restoreSnapshot(
+	configDir: string,
+	snapshotId = DEFAULT_SNAPSHOT_ID,
+): SnapshotManifest {
 	const manifest = verifySnapshotManifest(configDir, snapshotId);
 	const snapshotConfigDir = getSnapshotConfigDir(configDir, snapshotId);
 	const snapshotAnvilStateDir = getSnapshotAnvilStateDir(configDir, snapshotId);
@@ -343,15 +348,24 @@ export function publishSnapshotArtifacts(
 	copyFileSync(join(snapshotConfigDir, "localNetwork.json"), join(configDir, "localNetwork.json"));
 }
 
-function readAddress(contract: string, signature: string, arg: string, rpcUrl: string): string {
-	return execOrThrow("cast", ["call", contract, signature, arg, "--rpc-url", rpcUrl]).trim();
+async function readAddress(contract: Address, arg: Address, rpcUrl: string): Promise<string> {
+	const result = await publicClient(rpcUrl).readContract({
+		address: contract,
+		abi: gatewayRouterAbi,
+		functionName: "getGateway",
+		args: [arg],
+	});
+	return result as string;
 }
 
-export function verifySnapshotSemanticState(configDir: string, rpcUrls: {
-	l1: string;
-	l2: string;
-	l3: string;
-}): void {
+export async function verifySnapshotSemanticState(
+	configDir: string,
+	rpcUrls: {
+		l1: string;
+		l2: string;
+		l3: string;
+	},
+): Promise<void> {
 	const localNetworks = JSON.parse(readFileSync(join(configDir, "localNetwork.json"), "utf-8")) as {
 		l2Network?: {
 			tokenBridge: {
@@ -411,16 +425,13 @@ export function verifySnapshotSemanticState(configDir: string, rpcUrls: {
 	] as const;
 
 	for (const check of checks) {
-		const actual = readAddress(
-			check.contract,
-			"getGateway(address)(address)",
-			check.token,
+		const actual = await readAddress(
+			check.contract as Address,
+			check.token as Address,
 			check.rpcUrl,
 		);
 		if (actual.toLowerCase() !== check.expected.toLowerCase()) {
-			throw new Error(
-				`${check.label} mismatch: expected ${check.expected}, received ${actual}`,
-			);
+			throw new Error(`${check.label} mismatch: expected ${check.expected}, received ${actual}`);
 		}
 	}
 }

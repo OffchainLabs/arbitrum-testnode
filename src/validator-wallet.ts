@@ -1,7 +1,14 @@
-import { ethers } from "ethers";
-
-const WALLET_CREATED_EVENT =
-	"event WalletCreated(address indexed walletAddress,address indexed executorAddress,address indexed ownerAddress,address adminProxy)";
+import { encodeFunctionData, maxUint256, parseAbi } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { foundry } from "viem/chains";
+import {
+	erc20Abi,
+	publicClient,
+	rollupAbi,
+	validatorWalletAbi,
+	validatorWalletCreatorAbi,
+	walletClient,
+} from "./rpc.js";
 
 interface EnsureValidatorWalletStakedParams {
 	parentRpc: string;
@@ -14,121 +21,187 @@ interface EnsureValidatorWalletStakedParams {
 	requiredStakeWei: bigint;
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: ethers v5 Contract uses dynamic property access
-type DynContract = any;
+/** ABI fragments only needed for encodeFunctionData (batched wallet calls). */
+const stakeAbi = parseAbi([
+	"function approve(address, uint256) returns (bool)",
+	"function newStake(uint256, address)",
+	"function addToDeposit(address, address, uint256)",
+]);
+
+const walletCreatedEvent = validatorWalletCreatorAbi[1];
+
+/** Find or create a validator wallet via the WalletCreator contract. */
+async function resolveWalletAddress(
+	params: EnsureValidatorWalletStakedParams,
+): Promise<`0x${string}`> {
+	const pub = publicClient(params.parentRpc);
+	const validatorAccount = privateKeyToAccount(params.validatorKey);
+	const validator = walletClient(params.parentRpc, params.validatorKey);
+
+	const logs = await pub.getLogs({
+		address: params.creatorAddress,
+		event: walletCreatedEvent,
+		fromBlock: 0n,
+		toBlock: "latest",
+		args: { ownerAddress: params.validatorAddress },
+	});
+
+	// Filter so both executorAddress and ownerAddress match the validator.
+	// ownerAddress is already filtered above via the args parameter.
+	const matching = logs.filter((l) => l.args.executorAddress === params.validatorAddress);
+
+	if (matching.length > 1) {
+		throw new Error(`More than one validator wallet exists for ${params.validatorAddress}`);
+	}
+
+	if (matching.length === 1) {
+		const addr = matching[0]?.args.walletAddress;
+		if (!addr) {
+			throw new Error(`WalletCreated event missing walletAddress for ${params.validatorAddress}`);
+		}
+		return addr;
+	}
+
+	// No existing wallet — create one
+	const txHash = await validator.writeContract({
+		chain: foundry,
+		account: validatorAccount,
+		address: params.creatorAddress,
+		abi: validatorWalletCreatorAbi,
+		functionName: "createWallet",
+		args: [[params.stakeTokenAddress, params.rollupAddress]],
+	});
+	const receipt = await pub.waitForTransactionReceipt({ hash: txHash });
+
+	const postLogs = await pub.getLogs({
+		address: params.creatorAddress,
+		event: walletCreatedEvent,
+		fromBlock: receipt.blockNumber,
+		toBlock: receipt.blockNumber,
+	});
+	const created = postLogs[0]?.args.walletAddress;
+	if (!created) {
+		throw new Error(`WalletCreated event missing for ${params.validatorAddress}`);
+	}
+	return created;
+}
+
+/** Ensure the validator wallet holds at least `requiredStakeWei` of the stake token. */
+async function ensureWalletFunded(
+	params: EnsureValidatorWalletStakedParams,
+	walletAddress: `0x${string}`,
+): Promise<void> {
+	const pub = publicClient(params.parentRpc);
+	const funderAccount = privateKeyToAccount(params.funderKey);
+	const funder = walletClient(params.parentRpc, params.funderKey);
+
+	const walletBalance = await pub.readContract({
+		address: params.stakeTokenAddress,
+		abi: erc20Abi,
+		functionName: "balanceOf",
+		args: [walletAddress],
+	});
+
+	if (walletBalance >= params.requiredStakeWei) {
+		return;
+	}
+
+	const shortfall = params.requiredStakeWei - walletBalance;
+
+	const funderBalance = await pub.readContract({
+		address: params.stakeTokenAddress,
+		abi: erc20Abi,
+		functionName: "balanceOf",
+		args: [funderAccount.address],
+	});
+
+	if (funderBalance < shortfall) {
+		const depositHash = await funder.writeContract({
+			chain: foundry,
+			account: funderAccount,
+			address: params.stakeTokenAddress,
+			abi: erc20Abi,
+			functionName: "deposit",
+			value: shortfall,
+		});
+		await pub.waitForTransactionReceipt({ hash: depositHash });
+	}
+
+	const transferHash = await funder.writeContract({
+		chain: foundry,
+		account: funderAccount,
+		address: params.stakeTokenAddress,
+		abi: erc20Abi,
+		functionName: "transfer",
+		args: [walletAddress, shortfall],
+	});
+	await pub.waitForTransactionReceipt({ hash: transferHash });
+}
 
 export async function ensureValidatorWalletStaked(
 	params: EnsureValidatorWalletStakedParams,
 ): Promise<`0x${string}`> {
-	const provider = new ethers.providers.JsonRpcProvider(params.parentRpc);
-	const validator = new ethers.Wallet(params.validatorKey, provider);
-	const funder = new ethers.Wallet(params.funderKey, provider);
-	const requiredStake = ethers.BigNumber.from(params.requiredStakeWei.toString());
+	const pub = publicClient(params.parentRpc);
+	const validatorAccount = privateKeyToAccount(params.validatorKey);
+	const validator = walletClient(params.parentRpc, params.validatorKey);
 
-	const creatorInterface = new ethers.utils.Interface([WALLET_CREATED_EVENT]);
-	const creatorTopic = creatorInterface.getEventTopic("WalletCreated");
-	const validatorTopic = ethers.utils.hexZeroPad(params.validatorAddress, 32);
-	const logs = await provider.getLogs({
-		address: params.creatorAddress,
-		fromBlock: 0,
-		toBlock: "latest",
-		topics: [creatorTopic, null, validatorTopic, validatorTopic],
+	const walletAddress = await resolveWalletAddress(params);
+	await ensureWalletFunded(params, walletAddress);
+
+	const currentStake = await pub.readContract({
+		address: params.rollupAddress,
+		abi: rollupAbi,
+		functionName: "amountStaked",
+		args: [walletAddress],
 	});
 
-	if (logs.length > 1) {
-		throw new Error(`More than one validator wallet exists for ${params.validatorAddress}`);
-	}
-
-	let walletAddress: `0x${string}`;
-	if (logs.length === 1) {
-		const log = logs[0] as { topics: string[]; data: string };
-		walletAddress = creatorInterface.parseLog(log).args["walletAddress"];
-	} else {
-		const creator: DynContract = new ethers.Contract(
-			params.creatorAddress,
-			["function createWallet(address[] initialExecutorAllowedDests) returns (address)"],
-			validator,
-		);
-		const tx = await creator.createWallet([params.stakeTokenAddress, params.rollupAddress]);
-		const receipt = await tx.wait();
-		const created = receipt.events.find(
-			(event: { topics?: string[] }) => event.topics?.[0] === creatorTopic,
-		);
-		if (!created) {
-			throw new Error(`WalletCreated event missing for ${params.validatorAddress}`);
-		}
-		walletAddress = creatorInterface.parseLog(created).args["walletAddress"];
-	}
-
-	const stakeToken: DynContract = new ethers.Contract(
-		params.stakeTokenAddress,
-		[
-			"function balanceOf(address) view returns (uint256)",
-			"function deposit() payable",
-			"function transfer(address,uint256) returns (bool)",
-		],
-		funder,
-	);
-	const rollup: DynContract = new ethers.Contract(
-		params.rollupAddress,
-		[
-			"function amountStaked(address) view returns (uint256)",
-			"function getStaker(address) view returns (uint256,bytes32,uint64,bool,address)",
-		],
-		provider,
-	);
-	const wallet: DynContract = new ethers.Contract(
-		walletAddress,
-		["function executeTransactions(bytes[] data,address[] destination,uint256[] amount)"],
-		validator,
-	);
-
-	const walletBalance = await stakeToken.balanceOf(walletAddress);
-	if (walletBalance.lt(requiredStake)) {
-		const shortfall = requiredStake.sub(walletBalance);
-		const funderBalance = await stakeToken.balanceOf(await funder.getAddress());
-		if (funderBalance.lt(shortfall)) {
-			const tx = await stakeToken.deposit({ value: shortfall });
-			await tx.wait();
-		}
-		const tx = await stakeToken.transfer(walletAddress, shortfall);
-		await tx.wait();
-	}
-
-	const currentStake = await rollup.amountStaked(walletAddress);
-	if (currentStake.gte(requiredStake)) {
+	if (currentStake >= params.requiredStakeWei) {
 		return walletAddress;
 	}
 
-	const staker = await rollup.getStaker(walletAddress);
-	const missingStake = requiredStake.sub(currentStake);
-	const erc20Interface = new ethers.utils.Interface(["function approve(address,uint256)"]);
-	const rollupInterface = new ethers.utils.Interface([
-		"function newStake(uint256,address)",
-		"function addToDeposit(address,address,uint256)",
-	]);
+	// Read staker info — tuple: (uint256, bytes32, uint64, bool, address)
+	const staker = await pub.readContract({
+		address: params.rollupAddress,
+		abi: rollupAbi,
+		functionName: "getStaker",
+		args: [walletAddress],
+	});
 
-	const actionData = staker[3]
-		? rollupInterface.encodeFunctionData("addToDeposit", [
-				walletAddress,
-				walletAddress,
-				missingStake,
-			])
-		: rollupInterface.encodeFunctionData("newStake", [requiredStake, walletAddress]);
+	const isStaked = staker[3];
+	const missingStake = params.requiredStakeWei - currentStake;
 
-	const tx = await wallet.executeTransactions(
-		[
-			erc20Interface.encodeFunctionData("approve", [
-				params.rollupAddress,
-				ethers.constants.MaxUint256,
-			]),
-			actionData,
+	const actionData = isStaked
+		? encodeFunctionData({
+				abi: stakeAbi,
+				functionName: "addToDeposit",
+				args: [walletAddress, walletAddress, missingStake],
+			})
+		: encodeFunctionData({
+				abi: stakeAbi,
+				functionName: "newStake",
+				args: [params.requiredStakeWei, walletAddress],
+			});
+
+	const approveData = encodeFunctionData({
+		abi: stakeAbi,
+		functionName: "approve",
+		args: [params.rollupAddress, maxUint256],
+	});
+
+	const txHash = await validator.writeContract({
+		chain: foundry,
+		account: validatorAccount,
+		address: walletAddress,
+		abi: validatorWalletAbi,
+		functionName: "executeTransactions",
+		args: [
+			[approveData, actionData],
+			[params.stakeTokenAddress, params.rollupAddress],
+			[0n, 0n],
 		],
-		[params.stakeTokenAddress, params.rollupAddress],
-		[0, 0],
-		{ gasLimit: 800000 },
-	);
-	await tx.wait();
+		gas: 800000n,
+	});
+	await pub.waitForTransactionReceipt({ hash: txHash });
 
 	return walletAddress;
 }

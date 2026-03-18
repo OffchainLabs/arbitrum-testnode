@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -74,7 +74,10 @@ describe("snapshot manifest", () => {
 		writeFixtureTree(configDir);
 
 		const composeFile = join(configDir, "docker-compose.yaml");
-		writeFileSync(composeFile, "services:\n  sequencer:\n    image: offchainlabs/nitro-node:v3.9.5-test\n");
+		writeFileSync(
+			composeFile,
+			"services:\n  sequencer:\n    image: offchainlabs/nitro-node:v3.9.5-test\n",
+		);
 
 		const manifest = buildSnapshotManifest(configDir, composeFile);
 		const snapshotVolumesDir = getSnapshotVolumesDir(configDir, DEFAULT_SNAPSHOT_ID);
@@ -100,7 +103,10 @@ describe("snapshot manifest", () => {
 		writeFixtureTree(configDir);
 
 		const composeFile = join(configDir, "docker-compose.yaml");
-		writeFileSync(composeFile, "services:\n  sequencer:\n    image: offchainlabs/nitro-node:v3.9.5-test\n");
+		writeFileSync(
+			composeFile,
+			"services:\n  sequencer:\n    image: offchainlabs/nitro-node:v3.9.5-test\n",
+		);
 
 		const manifest = buildSnapshotManifest(configDir, composeFile);
 		const snapshotConfigDir = getSnapshotConfigDir(configDir, DEFAULT_SNAPSHOT_ID);

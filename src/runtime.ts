@@ -21,14 +21,7 @@ const L1_HEARTBEAT_MARKER = "testnode-l1-heartbeat";
 
 export function stopRuntime(options: RuntimeOptions): void {
 	composeDown({ composeFile: options.composeFile, projectName: options.projectName });
-	exec("docker", [
-		"compose",
-		"-f",
-		options.composeFile,
-		"-p",
-		options.projectName,
-		"down",
-	]);
+	exec("docker", ["compose", "-f", options.composeFile, "-p", options.projectName, "down"]);
 	exec("pkill", ["-f", "anvil.*--port.*8545"]);
 	exec("pkill", ["-f", L1_HEARTBEAT_MARKER]);
 }
@@ -85,19 +78,19 @@ export async function startNitroFromSnapshot(
 	options: RuntimeOptions,
 	rpcs: RuntimeRpcs,
 ): Promise<void> {
-	const l2Result = composeUp(
-		["sequencer", "validator"],
-		{ composeFile: options.composeFile, projectName: options.projectName },
-	);
+	const l2Result = composeUp(["sequencer", "validator"], {
+		composeFile: options.composeFile,
+		projectName: options.projectName,
+	});
 	if (l2Result.exitCode !== 0) {
 		throw new Error(l2Result.stderr.trim() || "failed to start L2 services");
 	}
 	await waitForRpc(rpcs.l2);
 
-	const l3Result = composeUp(
-		["l3node"],
-		{ composeFile: options.composeFile, projectName: options.projectName },
-	);
+	const l3Result = composeUp(["l3node"], {
+		composeFile: options.composeFile,
+		projectName: options.projectName,
+	});
 	if (l3Result.exitCode !== 0) {
 		throw new Error(l3Result.stderr.trim() || "failed to start l3node");
 	}

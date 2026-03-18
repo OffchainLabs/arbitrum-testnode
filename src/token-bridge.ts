@@ -1,7 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import type { Address } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { foundry } from "viem/chains";
 import { accounts } from "./accounts.js";
 import {
+	ZERO_ADDRESS,
 	createChainSpec,
 	createParentDeployment,
 	getAdminOutputDir,
@@ -10,10 +14,16 @@ import {
 	writeChainSpecFile,
 	writeCombinedLocalNetworkFile,
 	writeSdkNetworkFileFromBridgeUiConfig,
-	ZERO_ADDRESS,
 } from "./chain-spec.js";
 import { clampDepositAmount } from "./deposit-amount.js";
-import { cast, execOrThrow } from "./exec.js";
+import { execOrThrow } from "./exec.js";
+import {
+	arbOwnerAbi,
+	getBalanceWei as getBalanceWeiRpc,
+	readContractOrZero,
+	rollupAbi,
+	walletClient,
+} from "./rpc.js";
 
 const ARB_OWNER = "0x0000000000000000000000000000000000000070" as const;
 function getAdminCliEntry(): string {
@@ -148,35 +158,33 @@ function runCompose(
 		timeoutMs?: number;
 	},
 ): string {
-	return execOrThrow(
-		"docker",
-		composeRunArgs(compose, service, command, options),
-		{ timeout: options?.timeoutMs ?? BRIDGE_DEPLOY_TIMEOUT_MS },
-	);
+	return execOrThrow("docker", composeRunArgs(compose, service, command, options), {
+		timeout: options?.timeoutMs ?? BRIDGE_DEPLOY_TIMEOUT_MS,
+	});
 }
 
 function runAdminCli(args: string[], timeoutMs = BRIDGE_DEPLOY_TIMEOUT_MS): string {
 	return execOrThrow(ADMIN_CLI_NODE_BIN, [getAdminCliEntry(), ...args], { timeout: timeoutMs });
 }
 
-function getBalanceWei(address: string, rpcUrl: string): bigint {
-	return BigInt(cast(["balance", address, "--rpc-url", rpcUrl]).trim());
+async function getBalanceWei(address: Address, rpcUrl: string): Promise<bigint> {
+	return getBalanceWeiRpc(address, rpcUrl);
 }
 
-function topUpIfNeeded(
-	address: string,
+async function topUpIfNeeded(
+	address: Address,
 	targetWei: bigint,
 	rpcUrl: string,
-	senderKey: string,
+	senderKey: `0x${string}`,
 	label: string,
-): void {
-	const currentBalanceWei = getBalanceWei(address, rpcUrl);
+): Promise<void> {
+	const currentBalanceWei = await getBalanceWei(address, rpcUrl);
 	if (currentBalanceWei >= targetWei) {
 		return;
 	}
 
 	const senderAddress = accounts.funnel.address;
-	const senderBalanceWei = getBalanceWei(senderAddress, rpcUrl);
+	const senderBalanceWei = await getBalanceWei(senderAddress, rpcUrl);
 	const topUpWei = clampDepositAmount({
 		balanceWei: senderBalanceWei,
 		desiredWei: targetWei - currentBalanceWei,
@@ -184,16 +192,14 @@ function topUpIfNeeded(
 	});
 
 	console.log(`[init] Funding ${label} on ${rpcUrl} with ${topUpWei} wei`);
-	cast([
-		"send",
-		address,
-		"--value",
-		topUpWei.toString(),
-		"--rpc-url",
-		rpcUrl,
-		"--private-key",
-		senderKey,
-	]);
+	const account = privateKeyToAccount(senderKey);
+	const client = walletClient(rpcUrl, senderKey);
+	await client.sendTransaction({
+		account,
+		chain: foundry,
+		to: address,
+		value: topUpWei,
+	});
 }
 
 function readL1L2Network(configDir: string): L1L2NetworkFile {
@@ -234,16 +240,12 @@ function toHostAccessibleRpcUrl(rpcUrl: string): string {
 	}
 }
 
-function readAddressOrZero(
-	contractAddress: string,
-	signature: string,
+async function readAddressOrZero(
+	contractAddress: Address,
+	functionName: "outbox" | "rollupEventInbox" | "challengeManager",
 	rpcUrl: string,
-): string {
-	try {
-		return cast(["call", contractAddress, signature, "--rpc-url", rpcUrl]).trim();
-	} catch {
-		return ZERO_ADDRESS;
-	}
+): Promise<string> {
+	return readContractOrZero(contractAddress, rollupAbi, functionName, rpcUrl);
 }
 
 function deployTokenBridgeCreator(params: {
@@ -258,9 +260,7 @@ function deployTokenBridgeCreator(params: {
 	const output = execOrThrow(
 		"env",
 		[
-			...(NODE20_BIN_DIR
-				? [`PATH=${NODE20_BIN_DIR}:${process.env["PATH"] ?? ""}`]
-				: []),
+			...(NODE20_BIN_DIR ? [`PATH=${NODE20_BIN_DIR}:${process.env["PATH"] ?? ""}`] : []),
 			`BASECHAIN_RPC=${toHostAccessibleRpcUrl(params.parentRpc)}`,
 			`BASECHAIN_DEPLOYER_KEY=${params.parentKey}`,
 			`BASECHAIN_WETH=${params.parentWeth ?? ""}`,
@@ -335,39 +335,40 @@ function publishLocalNetworkArtifacts(configDir: string): void {
 	}
 }
 
-function setL3ChainOwners(l3RpcUrl: string, upgradeExecutorAddress: string): void {
-	cast([
-		"send",
-		ARB_OWNER,
-		"addChainOwner(address)",
-		upgradeExecutorAddress,
-		"--rpc-url",
-		l3RpcUrl,
-		"--private-key",
-		accounts.l3owner.privateKey,
-	]);
+async function setL3ChainOwners(l3RpcUrl: string, upgradeExecutorAddress: Address): Promise<void> {
+	const l3OwnerAccount = privateKeyToAccount(accounts.l3owner.privateKey);
+	const client = walletClient(l3RpcUrl, accounts.l3owner.privateKey);
+	await client.writeContract({
+		account: l3OwnerAccount,
+		chain: foundry,
+		address: ARB_OWNER,
+		abi: arbOwnerAbi,
+		functionName: "addChainOwner",
+		args: [upgradeExecutorAddress],
+	});
 
-	cast([
-		"send",
-		ARB_OWNER,
-		"removeChainOwner(address)",
-		accounts.l3owner.address,
-		"--rpc-url",
-		l3RpcUrl,
-		"--private-key",
-		accounts.l3owner.privateKey,
-	]);
+	await client.writeContract({
+		account: l3OwnerAccount,
+		chain: foundry,
+		address: ARB_OWNER,
+		abi: arbOwnerAbi,
+		functionName: "removeChainOwner",
+		args: [accounts.l3owner.address],
+	});
 }
 
-export function ensureL1L2TokenBridgeFunding(l1RpcUrl: string, l2RpcUrl: string): void {
-	topUpIfNeeded(
+export async function ensureL1L2TokenBridgeFunding(
+	l1RpcUrl: string,
+	l2RpcUrl: string,
+): Promise<void> {
+	await topUpIfNeeded(
 		accounts.funnel.address,
 		TOKENBRIDGE_DEPLOYER_TARGET_L1_WEI,
 		l1RpcUrl,
 		accounts.funnel.privateKey,
 		"tokenbridge deployer on L1",
 	);
-	topUpIfNeeded(
+	await topUpIfNeeded(
 		accounts.funnel.address,
 		TOKENBRIDGE_DEPLOYER_TARGET_L2_WEI,
 		l2RpcUrl,
@@ -376,15 +377,18 @@ export function ensureL1L2TokenBridgeFunding(l1RpcUrl: string, l2RpcUrl: string)
 	);
 }
 
-export function ensureL2L3TokenBridgeFunding(l2RpcUrl: string, l3RpcUrl: string): void {
-	topUpIfNeeded(
+export async function ensureL2L3TokenBridgeFunding(
+	l2RpcUrl: string,
+	l3RpcUrl: string,
+): Promise<void> {
+	await topUpIfNeeded(
 		accounts.userTokenBridgeDeployer.address,
 		TOKENBRIDGE_DEPLOYER_TARGET_L2_WEI,
 		l2RpcUrl,
 		accounts.funnel.privateKey,
 		"tokenbridge deployer on L2",
 	);
-	topUpIfNeeded(
+	await topUpIfNeeded(
 		accounts.userTokenBridgeDeployer.address,
 		TOKENBRIDGE_DEPLOYER_TARGET_L3_WEI,
 		l3RpcUrl,
@@ -393,7 +397,7 @@ export function ensureL2L3TokenBridgeFunding(l2RpcUrl: string, l3RpcUrl: string)
 	);
 }
 
-export function deployL1L2TokenBridge(params: BridgeDeployParams): void {
+export async function deployL1L2TokenBridge(params: BridgeDeployParams): Promise<void> {
 	const specPath = getChainSpecPath(params.configDir, "l2");
 	const parentRpc = toHostAccessibleRpcUrl(params.parentRpc);
 	const childRpc = toHostAccessibleRpcUrl(params.childRpc);
@@ -405,6 +409,7 @@ export function deployL1L2TokenBridge(params: BridgeDeployParams): void {
 		parentWeth: l2Deployment["stake-token"] ?? ZERO_ADDRESS,
 	});
 	waitForCreatorSettlement();
+	const rollupAddress = params.rollupAddress as Address;
 	const spec = createChainSpec({
 		chainName: "arb-dev-test",
 		chainId: 412346,
@@ -414,17 +419,9 @@ export function deployL1L2TokenBridge(params: BridgeDeployParams): void {
 		tokenBridgeCreator,
 		parentDeployment: createParentDeployment({
 			deployment: l2Deployment,
-			outbox: readAddressOrZero(params.rollupAddress, "outbox()(address)", parentRpc),
-			rollupEventInbox: readAddressOrZero(
-				params.rollupAddress,
-				"rollupEventInbox()(address)",
-				parentRpc,
-			),
-			challengeManager: readAddressOrZero(
-				params.rollupAddress,
-				"challengeManager()(address)",
-				parentRpc,
-			),
+			outbox: await readAddressOrZero(rollupAddress, "outbox", parentRpc),
+			rollupEventInbox: await readAddressOrZero(rollupAddress, "rollupEventInbox", parentRpc),
+			challengeManager: await readAddressOrZero(rollupAddress, "challengeManager", parentRpc),
 		}),
 		owner: accounts.l2owner.address,
 	});
@@ -440,7 +437,7 @@ export function deployL1L2TokenBridge(params: BridgeDeployParams): void {
 	publishLocalNetworkArtifacts(params.configDir);
 }
 
-export function deployL2L3TokenBridge(params: BridgeDeployParams): void {
+export async function deployL2L3TokenBridge(params: BridgeDeployParams): Promise<void> {
 	const specPath = getChainSpecPath(params.configDir, "l3");
 	const parentRpc = toHostAccessibleRpcUrl(params.parentRpc);
 	const childRpc = toHostAccessibleRpcUrl(params.childRpc);
@@ -451,6 +448,7 @@ export function deployL2L3TokenBridge(params: BridgeDeployParams): void {
 		parentWeth: params.parentWethOverride,
 	});
 	waitForCreatorSettlement();
+	const rollupAddress = params.rollupAddress as Address;
 	const spec = createChainSpec({
 		chainName: "orbit-dev-test",
 		chainId: 333333,
@@ -460,20 +458,14 @@ export function deployL2L3TokenBridge(params: BridgeDeployParams): void {
 		tokenBridgeCreator,
 		parentDeployment: createParentDeployment({
 			deployment: readDeploymentArtifact(params.configDir, "l3_deployment.json"),
-			outbox: readAddressOrZero(params.rollupAddress, "outbox()(address)", parentRpc),
-			rollupEventInbox: readAddressOrZero(
-				params.rollupAddress,
-				"rollupEventInbox()(address)",
-				parentRpc,
-			),
-			challengeManager: readAddressOrZero(
-				params.rollupAddress,
-				"challengeManager()(address)",
-				parentRpc,
-			),
+			outbox: await readAddressOrZero(rollupAddress, "outbox", parentRpc),
+			rollupEventInbox: await readAddressOrZero(rollupAddress, "rollupEventInbox", parentRpc),
+			challengeManager: await readAddressOrZero(rollupAddress, "challengeManager", parentRpc),
 		}),
 		ownership: {
-			addChainOwners: [readDeploymentArtifact(params.configDir, "l3_deployment.json")["upgrade-executor"]],
+			addChainOwners: [
+				readDeploymentArtifact(params.configDir, "l3_deployment.json")["upgrade-executor"],
+			],
 			removeDeployer: true,
 		},
 		owner: accounts.l3owner.address,
@@ -490,9 +482,13 @@ export function deployL2L3TokenBridge(params: BridgeDeployParams): void {
 	publishLocalNetworkArtifacts(params.configDir);
 }
 
-export function transferL3ChainOwnership(configDir: string, _l2RpcUrl: string, l3RpcUrl: string): void {
+export async function transferL3ChainOwnership(
+	configDir: string,
+	_l2RpcUrl: string,
+	l3RpcUrl: string,
+): Promise<void> {
 	const upgradeExecutor = readL3UpgradeExecutor(configDir);
-	setL3ChainOwners(l3RpcUrl, upgradeExecutor);
+	await setL3ChainOwners(l3RpcUrl, upgradeExecutor as Address);
 }
 
 export function getL2ChildWeth(configDir: string): string {

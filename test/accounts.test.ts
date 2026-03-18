@@ -32,9 +32,7 @@ describe("accounts", () => {
 
 	describe("sequencer (index 1)", () => {
 		it("has the correct address", () => {
-			expect(accounts.sequencer.address).toBe(
-				"0xe2148eE53c0755215Df69b2616E552154EdC584f",
-			);
+			expect(accounts.sequencer.address).toBe("0xe2148eE53c0755215Df69b2616E552154EdC584f");
 		});
 
 		it("has the correct private key", () => {
@@ -54,9 +52,7 @@ describe("accounts", () => {
 
 	describe("validator (index 2)", () => {
 		it("has the correct address", () => {
-			expect(accounts.validator.address).toBe(
-				"0x6A568afe0f82d34759347bb36F14A6bB171d2CBe",
-			);
+			expect(accounts.validator.address).toBe("0x6A568afe0f82d34759347bb36F14A6bB171d2CBe");
 		});
 
 		it("has the correct private key", () => {
@@ -96,9 +92,7 @@ describe("accounts", () => {
 
 	describe("l3sequencer (index 4)", () => {
 		it("has the correct address", () => {
-			expect(accounts.l3sequencer.address).toBe(
-				"0x3E6134aAD4C4d422FF2A4391Dc315c4DDf98D1a5",
-			);
+			expect(accounts.l3sequencer.address).toBe("0x3E6134aAD4C4d422FF2A4391Dc315c4DDf98D1a5");
 		});
 
 		it("has the correct private key", () => {
@@ -138,9 +132,7 @@ describe("accounts", () => {
 
 	describe("auctioneer (index 6)", () => {
 		it("has the correct address", () => {
-			expect(accounts.auctioneer.address).toBe(
-				"0x46225F4cee2b4A1d506C7f894bb3dAeB21BF1596",
-			);
+			expect(accounts.auctioneer.address).toBe("0x46225F4cee2b4A1d506C7f894bb3dAeB21BF1596");
 		});
 
 		it("has the correct private key", () => {
@@ -160,9 +152,7 @@ describe("accounts", () => {
 
 	describe("filterer (index 7)", () => {
 		it("has the correct address", () => {
-			expect(accounts.filterer.address).toBe(
-				"0x19ED240ddd4DDEeDdF2B77aA279F258eFC52f9b7",
-			);
+			expect(accounts.filterer.address).toBe("0x19ED240ddd4DDEeDdF2B77aA279F258eFC52f9b7");
 		});
 
 		it("has the correct private key", () => {

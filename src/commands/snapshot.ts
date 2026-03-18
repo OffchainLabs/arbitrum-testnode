@@ -38,10 +38,7 @@ const snapshotInstallOptions = z.object({
 		.string()
 		.optional()
 		.describe("GitHub repo in owner/repo form (defaults to TESTNODE_SNAPSHOT_GH_REPO)"),
-	releaseTag: z
-		.string()
-		.optional()
-		.describe("GitHub release tag to install (defaults to latest)"),
+	releaseTag: z.string().optional().describe("GitHub release tag to install (defaults to latest)"),
 	url: z.string().optional().describe("Direct snapshot archive URL override"),
 });
 

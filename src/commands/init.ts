@@ -1,23 +1,27 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Cli, z } from "incur";
+import type { Address } from "viem";
+import { parseEther } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { foundry } from "viem/chains";
 import { accounts } from "../accounts.js";
 import { writeChainConfig } from "../chain-config.js";
 import { clampDepositAmount } from "../deposit-amount.js";
-import { composeDown, composeRestart, composeUp, waitForRpc } from "../docker.js";
-import { arbitrum, cast, exec, execOrThrow } from "../exec.js";
+import { composeRestart, composeUp, waitForRpc } from "../docker.js";
+import { arbitrum, execOrThrow } from "../exec.js";
 import { ZERO_ADDRESS } from "../init-helpers.js";
 import { getL3ParentChainFundingPlan } from "../l3-parent-chain-funding.js";
+import { patchGeneratedL2NodeConfig, patchGeneratedL3NodeConfig } from "../node-config-patches.js";
 import {
-	patchGeneratedL2NodeConfig,
-	patchGeneratedL3NodeConfig,
-} from "../node-config-patches.js";
-import {
-	startAnvilWithState,
-	startNitroFromSnapshot,
-	stopRuntime,
-} from "../runtime.js";
+	erc20Abi,
+	getBalanceWei as getBalanceWeiRpc,
+	inboxAbi,
+	publicClient,
+	rollupAbi,
+	walletClient,
+} from "../rpc.js";
 import {
 	finishActiveRun,
 	logRunEvent,
@@ -26,14 +30,16 @@ import {
 	startRunLoggingFromEnv,
 	updateRunStep,
 } from "../run-logger.js";
-import type { InitState } from "../state.js";
+import { startAnvilWithState, startNitroFromSnapshot, stopRuntime } from "../runtime.js";
+import { installSnapshotRelease } from "../snapshot-release.js";
 import {
-	deployL1L2TokenBridge,
-	deployL2L3TokenBridge,
-	ensureL1L2TokenBridgeFunding,
-	ensureL2L3TokenBridgeFunding,
-	getL2ChildWeth,
-} from "../token-bridge.js";
+	DEFAULT_SNAPSHOT_ID,
+	captureSnapshot,
+	hasSnapshot,
+	restoreSnapshot,
+	verifySnapshotSemanticState,
+} from "../snapshot.js";
+import type { InitState } from "../state.js";
 import {
 	createState,
 	getNextPendingStep,
@@ -42,15 +48,14 @@ import {
 	markStepFailed,
 	saveState,
 } from "../state.js";
-import { ensureValidatorWalletStaked } from "../validator-wallet.js";
 import {
-	DEFAULT_SNAPSHOT_ID,
-	captureSnapshot,
-	hasSnapshot,
-	restoreSnapshot,
-	verifySnapshotSemanticState,
-} from "../snapshot.js";
-import { installSnapshotRelease } from "../snapshot-release.js";
+	deployL1L2TokenBridge,
+	deployL2L3TokenBridge,
+	ensureL1L2TokenBridgeFunding,
+	ensureL2L3TokenBridgeFunding,
+	getL2ChildWeth,
+} from "../token-bridge.js";
+import { ensureValidatorWalletStaked } from "../validator-wallet.js";
 
 const PROJECT_ROOT = resolve(import.meta.dirname, "../..");
 const CONFIG_DIR = resolve(PROJECT_ROOT, "config");
@@ -119,25 +124,23 @@ function setL3StakerEnabled(enabled: boolean): void {
 	writeFileSync(configPath, JSON.stringify(patched, null, 2));
 }
 
-function applyGasEstimationWorkaround(): void {
+async function applyGasEstimationWorkaround(): Promise<void> {
 	console.log("[init] Applying L1/L2 gas estimation workaround");
 	for (const rpcUrl of [L1_RPC, L2_RPC]) {
-		sendZeroAddressTransfer(rpcUrl, "1ether");
+		await sendZeroAddressTransfer(rpcUrl, parseEther("1"));
 	}
 }
 
-function sendZeroAddressTransfer(rpcUrl: string, value = "1wei"): void {
+async function sendZeroAddressTransfer(rpcUrl: string, value = 1n): Promise<void> {
 	try {
-		cast([
-			"send",
-			ZERO_ADDRESS,
-			"--value",
+		const account = privateKeyToAccount(accounts.funnel.privateKey);
+		const client = walletClient(rpcUrl, accounts.funnel.privateKey);
+		await client.sendTransaction({
+			account,
+			chain: foundry,
+			to: ZERO_ADDRESS as Address,
 			value,
-			"--rpc-url",
-			rpcUrl,
-			"--private-key",
-			accounts.funnel.privateKey,
-		]);
+		});
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		if (
@@ -151,44 +154,37 @@ function sendZeroAddressTransfer(rpcUrl: string, value = "1wei"): void {
 	}
 }
 
-function getBalanceWei(address: string, rpcUrl: string): bigint {
-	return BigInt(
-		cast([
-			"balance",
-			address,
-			"--rpc-url",
-			rpcUrl,
-		]).trim(),
-	);
+async function getBalanceWei(address: Address, rpcUrl: string): Promise<bigint> {
+	return getBalanceWeiRpc(address, rpcUrl);
 }
 
-function getErc20BalanceWei(tokenAddress: string, address: string, rpcUrl: string): bigint {
-	return BigInt(
-		cast([
-			"call",
-			tokenAddress,
-			"balanceOf(address)(uint256)",
-			address,
-			"--rpc-url",
-			rpcUrl,
-		]).trim(),
-	);
+async function getErc20BalanceWei(
+	tokenAddress: Address,
+	address: Address,
+	rpcUrl: string,
+): Promise<bigint> {
+	return publicClient(rpcUrl).readContract({
+		address: tokenAddress,
+		abi: erc20Abi,
+		functionName: "balanceOf",
+		args: [address],
+	}) as Promise<bigint>;
 }
 
-function topUpEthIfNeeded(
-	address: string,
+async function topUpEthIfNeeded(
+	address: Address,
 	targetWei: bigint,
 	rpcUrl: string,
-	senderKey: string,
+	senderKey: `0x${string}`,
 	label: string,
-): void {
-	const currentBalanceWei = getBalanceWei(address, rpcUrl);
+): Promise<void> {
+	const currentBalanceWei = await getBalanceWei(address, rpcUrl);
 	if (currentBalanceWei >= targetWei) {
 		return;
 	}
 
 	const senderAddress = accounts.funnel.address;
-	const senderBalanceWei = getBalanceWei(senderAddress, rpcUrl);
+	const senderBalanceWei = await getBalanceWei(senderAddress, rpcUrl);
 	const depositWei = clampDepositAmount({
 		balanceWei: senderBalanceWei,
 		desiredWei: targetWei - currentBalanceWei,
@@ -196,24 +192,22 @@ function topUpEthIfNeeded(
 	});
 
 	console.log(`[init] Funding ${label} on ${rpcUrl} with ${depositWei} wei`);
-	cast([
-		"send",
-		address,
-		"--value",
-		depositWei.toString(),
-		"--rpc-url",
-		rpcUrl,
-		"--private-key",
-		senderKey,
-	]);
+	const account = privateKeyToAccount(senderKey);
+	const client = walletClient(rpcUrl, senderKey);
+	await client.sendTransaction({
+		account,
+		chain: foundry,
+		to: address,
+		value: depositWei,
+	});
 }
 
 async function ensureL2ValidatorFunding(
-	rollupAddress: string,
-	stakeTokenAddress: string,
+	rollupAddress: Address,
+	stakeTokenAddress: Address,
 	validatorWalletCreatorAddress: string,
 ): Promise<void> {
-	topUpEthIfNeeded(
+	await topUpEthIfNeeded(
 		accounts.validator.address,
 		L2_VALIDATOR_GAS_TARGET_WEI,
 		L1_RPC,
@@ -221,16 +215,12 @@ async function ensureL2ValidatorFunding(
 		"L2 validator gas",
 	);
 
-	const requiredStakeWei = BigInt(
-		cast([
-			"call",
-			rollupAddress,
-			"baseStake()(uint256)",
-			"--rpc-url",
-			L1_RPC,
-		]).trim(),
-	);
-	const currentStakeWei = getErc20BalanceWei(
+	const requiredStakeWei = (await publicClient(L1_RPC).readContract({
+		address: rollupAddress,
+		abi: rollupAbi,
+		functionName: "baseStake",
+	})) as bigint;
+	const currentStakeWei = await getErc20BalanceWei(
 		stakeTokenAddress,
 		accounts.validator.address,
 		L1_RPC,
@@ -240,41 +230,43 @@ async function ensureL2ValidatorFunding(
 	}
 
 	const neededStakeWei = requiredStakeWei - currentStakeWei;
-	const funderStakeWei = getErc20BalanceWei(stakeTokenAddress, accounts.funnel.address, L1_RPC);
+	const funderStakeWei = await getErc20BalanceWei(
+		stakeTokenAddress,
+		accounts.funnel.address,
+		L1_RPC,
+	);
 	if (funderStakeWei < neededStakeWei) {
 		const shortfallWei = neededStakeWei - funderStakeWei;
 		console.log(`[init] Wrapping ${shortfallWei} wei into stake token for L2 validator`);
-		cast([
-			"send",
-			stakeTokenAddress,
-			"deposit()",
-			"--value",
-			shortfallWei.toString(),
-			"--rpc-url",
-			L1_RPC,
-			"--private-key",
-			accounts.funnel.privateKey,
-		]);
+		const funnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
+		const depositClient = walletClient(L1_RPC, accounts.funnel.privateKey);
+		await depositClient.writeContract({
+			account: funnelAccount,
+			chain: foundry,
+			address: stakeTokenAddress,
+			abi: erc20Abi,
+			functionName: "deposit",
+			value: shortfallWei,
+		});
 	}
 
 	console.log(`[init] Funding L2 validator stake token with ${neededStakeWei} units`);
-	cast([
-		"send",
-		stakeTokenAddress,
-		"transfer(address,uint256)",
-		accounts.validator.address,
-		neededStakeWei.toString(),
-		"--rpc-url",
-		L1_RPC,
-		"--private-key",
-		accounts.funnel.privateKey,
-	]);
+	const funnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
+	const transferClient = walletClient(L1_RPC, accounts.funnel.privateKey);
+	await transferClient.writeContract({
+		account: funnelAccount,
+		chain: foundry,
+		address: stakeTokenAddress,
+		abi: erc20Abi,
+		functionName: "transfer",
+		args: [accounts.validator.address, neededStakeWei],
+	});
 
 	await ensureValidatorWalletStaked({
 		parentRpc: L1_RPC,
 		creatorAddress: validatorWalletCreatorAddress as `0x${string}`,
-		rollupAddress: rollupAddress as `0x${string}`,
-		stakeTokenAddress: stakeTokenAddress as `0x${string}`,
+		rollupAddress: rollupAddress,
+		stakeTokenAddress: stakeTokenAddress,
 		validatorAddress: accounts.validator.address,
 		validatorKey: accounts.validator.privateKey,
 		funderKey: accounts.funnel.privateKey,
@@ -282,14 +274,14 @@ async function ensureL2ValidatorFunding(
 	});
 }
 
-function fundL3ParentChainAccounts(): void {
+async function fundL3ParentChainAccounts(): Promise<void> {
 	for (const transfer of getL3ParentChainFundingPlan()) {
-		const recipientBalanceWei = getBalanceWei(transfer.address, L2_RPC);
+		const recipientBalanceWei = await getBalanceWei(transfer.address as Address, L2_RPC);
 		if (recipientBalanceWei >= transfer.amountWei) {
 			console.log(`[init] ${transfer.label} already funded on L2 parent chain`);
 			continue;
 		}
-		const senderBalanceWei = getBalanceWei(accounts.funnel.address, L2_RPC);
+		const senderBalanceWei = await getBalanceWei(accounts.funnel.address, L2_RPC);
 		let topUpWei: bigint;
 		try {
 			topUpWei = clampDepositAmount({
@@ -302,28 +294,26 @@ function fundL3ParentChainAccounts(): void {
 			continue;
 		}
 		console.log(`[init] Funding ${transfer.label} on L2 parent chain with ${topUpWei} wei`);
-		cast([
-			"send",
-			transfer.address,
-			"--value",
-			topUpWei.toString(),
-			"--rpc-url",
-			L2_RPC,
-			"--private-key",
-			accounts.funnel.privateKey,
-		]);
+		const funnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
+		const client = walletClient(L2_RPC, accounts.funnel.privateKey);
+		await client.sendTransaction({
+			account: funnelAccount,
+			chain: foundry,
+			to: transfer.address as Address,
+			value: topUpWei,
+		});
 	}
 }
 
 async function waitForBalanceAtLeast(
-	address: string,
+	address: Address,
 	rpcUrl: string,
 	targetWei: bigint,
 	timeoutMs = 120_000,
 ): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
-		if (getBalanceWei(address, rpcUrl) >= targetWei) {
+		if ((await getBalanceWei(address, rpcUrl)) >= targetWei) {
 			return;
 		}
 		await new Promise((resolve) => setTimeout(resolve, 1_000));
@@ -339,7 +329,7 @@ async function waitForL3RpcWithParentChainNudges(timeoutMs = 300_000): Promise<v
 			await waitForRpc(L3_RPC, 5_000, 500);
 			return;
 		} catch {
-			sendZeroAddressTransfer(L2_RPC);
+			await sendZeroAddressTransfer(L2_RPC);
 		}
 	}
 
@@ -384,7 +374,9 @@ function createL1Steps(): Record<string, StepRunner> {
 	return {
 		"start-l1": async (state) => {
 			anvilProcess = startAnvilWithState(CONFIG_DIR);
-			return markStepDone(state, "start-l1", { ...(anvilProcess?.pid ? { pid: anvilProcess.pid } : {}) });
+			return markStepDone(state, "start-l1", {
+				...(anvilProcess?.pid ? { pid: anvilProcess.pid } : {}),
+			});
 		},
 		"wait-l1": async (state) => {
 			await waitForRpc(L1_RPC);
@@ -416,15 +408,15 @@ function createL2DeploySteps(): Record<string, StepRunner> {
 			});
 			copyConfigFile("l2_deployment.json", "deployment.json");
 			const deployment = readDeployment("l2_deployment.json");
-				return markStepDone(state, "deploy-l2-rollup", {
-					rollup: deployment["rollup"],
-					inbox: deployment["inbox"],
-					bridge: deployment["bridge"],
-					sequencerInbox: deployment["sequencer-inbox"],
-					upgradeExecutor: deployment["upgrade-executor"],
-					validatorWalletCreator: deployment["validator-wallet-creator"] ?? ZERO_ADDRESS,
-					stakeToken: deployment["stake-token"] ?? ZERO_ADDRESS,
-				});
+			return markStepDone(state, "deploy-l2-rollup", {
+				rollup: deployment["rollup"],
+				inbox: deployment["inbox"],
+				bridge: deployment["bridge"],
+				sequencerInbox: deployment["sequencer-inbox"],
+				upgradeExecutor: deployment["upgrade-executor"],
+				validatorWalletCreator: deployment["validator-wallet-creator"] ?? ZERO_ADDRESS,
+				stakeToken: deployment["stake-token"] ?? ZERO_ADDRESS,
+			});
 		},
 		"generate-l2-config": async (state) => {
 			const rollupData = state.steps["deploy-l2-rollup"]?.data;
@@ -461,24 +453,23 @@ function createL2DeploySteps(): Record<string, StepRunner> {
 			const src = resolve(CONFIG_DIR, "nodeConfig.json");
 			const dest = resolve(CONFIG_DIR, "l2-nodeConfig.json");
 			const config = JSON.parse(readFileSync(src, "utf-8")) as Record<string, unknown>;
-			const stakeToken =
-				(rollupData["stakeToken"] as string | undefined) ?? ZERO_ADDRESS;
+			const stakeToken = (rollupData["stakeToken"] as string | undefined) ?? ZERO_ADDRESS;
 			const patched = patchGeneratedL2NodeConfig(
 				config,
 				accounts.sequencer.privateKey,
 				stakeToken,
 				accounts.validator.privateKey,
 			);
-				writeFileSync(dest, `${JSON.stringify(patched, null, 2)}\n`, "utf-8");
-				if (stakeToken !== ZERO_ADDRESS) {
-					await ensureL2ValidatorFunding(
-						rollupData["rollup"] as string,
-						stakeToken,
-						rollupData["validatorWalletCreator"] as string,
-					);
-				}
-				return markStepDone(state, "generate-l2-config");
-			},
+			writeFileSync(dest, `${JSON.stringify(patched, null, 2)}\n`, "utf-8");
+			if (stakeToken !== ZERO_ADDRESS) {
+				await ensureL2ValidatorFunding(
+					rollupData["rollup"] as Address,
+					stakeToken as Address,
+					rollupData["validatorWalletCreator"] as string,
+				);
+			}
+			return markStepDone(state, "generate-l2-config");
+		},
 	};
 }
 
@@ -497,7 +488,7 @@ function createL2RuntimeSteps(): Record<string, StepRunner> {
 			if (!rollupData) {
 				throw new Error("Missing l2 rollup deployment data");
 			}
-			const currentL2BalanceWei = getBalanceWei(accounts.funnel.address, L2_RPC);
+			const currentL2BalanceWei = await getBalanceWei(accounts.funnel.address, L2_RPC);
 			if (currentL2BalanceWei >= L2_DEPOSIT_READY_THRESHOLD_WEI) {
 				console.log("[init] L2 funnel already funded; skipping inbox deposit");
 				return markStepDone(state, "deposit-eth-to-l2", {
@@ -505,24 +496,19 @@ function createL2RuntimeSteps(): Record<string, StepRunner> {
 					reason: "l2 funnel already has balance",
 				});
 			}
-			const inbox = rollupData["inbox"] as string;
+			const inbox = rollupData["inbox"] as Address;
 			// Call depositEth() on the Inbox contract with ETH value
-			cast([
-				"send",
-				inbox,
-				"depositEth()",
-				"--value",
-				L2_DEPOSIT_VALUE,
-				"--rpc-url",
-				L1_RPC,
-				"--private-key",
-				accounts.funnel.privateKey,
-			]);
-			await waitForBalanceAtLeast(
-				accounts.funnel.address,
-				L2_RPC,
-				L2_DEPOSIT_READY_THRESHOLD_WEI,
-			);
+			const funnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
+			const client = walletClient(L1_RPC, accounts.funnel.privateKey);
+			await client.writeContract({
+				account: funnelAccount,
+				chain: foundry,
+				address: inbox,
+				abi: inboxAbi,
+				functionName: "depositEth",
+				value: parseEther("100000"),
+			});
+			await waitForBalanceAtLeast(accounts.funnel.address, L2_RPC, L2_DEPOSIT_READY_THRESHOLD_WEI);
 			return markStepDone(state, "deposit-eth-to-l2");
 		},
 		"deploy-l2-token-bridge": async (state) => {
@@ -530,9 +516,9 @@ function createL2RuntimeSteps(): Record<string, StepRunner> {
 			if (!rollupData) {
 				throw new Error("Missing l2 rollup deployment data");
 			}
-			ensureL1L2TokenBridgeFunding(L1_RPC, L2_RPC);
+			await ensureL1L2TokenBridgeFunding(L1_RPC, L2_RPC);
 			await new Promise((resolve) => setTimeout(resolve, 10_000));
-			deployL1L2TokenBridge({
+			await deployL1L2TokenBridge({
 				compose: DOCKER_OPTS,
 				configDir: CONFIG_DIR,
 				rollupAddress: rollupData["rollup"] as string,
@@ -547,47 +533,47 @@ function createL2RuntimeSteps(): Record<string, StepRunner> {
 	};
 }
 
-function fundL3DeployerAccounts(): void {
+async function fundL3DeployerAccounts(): Promise<void> {
 	console.log("[init] Funding L3 deployer accounts on L2");
 	for (const { address, label, amount } of [
-		{ address: accounts.l3owner.address, label: "l3owner", amount: "1000ether" },
-		{ address: accounts.userTokenBridgeDeployer.address, label: "userTokenBridgeDeployer", amount: "100ether" },
+		{ address: accounts.l3owner.address, label: "l3owner", amount: parseEther("1000") },
+		{
+			address: accounts.userTokenBridgeDeployer.address,
+			label: "userTokenBridgeDeployer",
+			amount: parseEther("100"),
+		},
 	]) {
-		cast([
-			"send",
-			address,
-			"--value",
-			amount,
-			"--rpc-url",
-			L2_RPC,
-			"--private-key",
-			accounts.funnel.privateKey,
-		]);
-		console.log(`[init] Funded ${label} on L2 with ${amount}`);
+		const funnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
+		const client = walletClient(L2_RPC, accounts.funnel.privateKey);
+		await client.sendTransaction({
+			account: funnelAccount,
+			chain: foundry,
+			to: address,
+			value: amount,
+		});
+		console.log(`[init] Funded ${label} on L2 with ${amount} wei`);
 	}
 	// Also fund userTokenBridgeDeployer on L1
-	cast([
-		"send",
-		accounts.userTokenBridgeDeployer.address,
-		"--value",
-		"100ether",
-		"--rpc-url",
-		L1_RPC,
-		"--private-key",
-		accounts.funnel.privateKey,
-	]);
+	const funnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
+	const l1Client = walletClient(L1_RPC, accounts.funnel.privateKey);
+	await l1Client.sendTransaction({
+		account: funnelAccount,
+		chain: foundry,
+		to: accounts.userTokenBridgeDeployer.address,
+		value: parseEther("100"),
+	});
 	console.log("[init] Funded userTokenBridgeDeployer on L1 with 100ether");
 }
 
 function createL3Steps(): Record<string, StepRunner> {
 	return {
 		"deploy-l3-rollup": async (state) => {
-			fundL3DeployerAccounts();
+			await fundL3DeployerAccounts();
 			writeChainConfig(CONFIG_DIR, "l3_chain_config.json", {
 				chainId: 333333,
 				owner: accounts.l3owner.address,
 			});
-			applyGasEstimationWorkaround();
+			await applyGasEstimationWorkaround();
 			deployRollupViaDocker({
 				PARENT_CHAIN_RPC: L2_RPC_DOCKER,
 				DEPLOYER_PRIVKEY: accounts.l3owner.privateKey,
@@ -652,48 +638,42 @@ function createL3Steps(): Record<string, StepRunner> {
 				false,
 				accounts.l3sequencer.privateKey,
 			);
-				writeFileSync(dest, JSON.stringify(patched, null, 2));
-				return markStepDone(state, "generate-l3-config");
-				},
-				"start-l3": async (state) => {
-					const rollupData = state.steps["deploy-l3-rollup"]?.data;
-					if (!rollupData) {
-						throw new Error("Missing l3 rollup deployment data");
-					}
-					fundL3ParentChainAccounts();
-					const stakeToken = rollupData["stakeToken"] as string | undefined;
-					const validatorWalletCreator = rollupData["validatorWalletCreator"] as
-						| string
-						| undefined;
-					if (
-						stakeToken &&
-						stakeToken !== ZERO_ADDRESS &&
-						validatorWalletCreator &&
-						validatorWalletCreator !== ZERO_ADDRESS
-					) {
-						const requiredStakeWei = BigInt(
-							cast([
-								"call",
-								rollupData["rollup"] as string,
-								"baseStake()(uint256)",
-								"--rpc-url",
-								L2_RPC,
-							]).trim(),
-						);
-						await ensureValidatorWalletStaked({
-							parentRpc: L2_RPC,
-							creatorAddress: validatorWalletCreator as `0x${string}`,
-							rollupAddress: rollupData["rollup"] as `0x${string}`,
-							stakeTokenAddress: stakeToken as `0x${string}`,
-							validatorAddress: accounts.validator.address,
-							validatorKey: accounts.validator.privateKey,
-							funderKey: accounts.funnel.privateKey,
-							requiredStakeWei,
-						});
-					}
-					composeUp(["l3node"], DOCKER_OPTS);
-					return markStepDone(state, "start-l3");
-				},
+			writeFileSync(dest, JSON.stringify(patched, null, 2));
+			return markStepDone(state, "generate-l3-config");
+		},
+		"start-l3": async (state) => {
+			const rollupData = state.steps["deploy-l3-rollup"]?.data;
+			if (!rollupData) {
+				throw new Error("Missing l3 rollup deployment data");
+			}
+			await fundL3ParentChainAccounts();
+			const stakeToken = rollupData["stakeToken"] as string | undefined;
+			const validatorWalletCreator = rollupData["validatorWalletCreator"] as string | undefined;
+			if (
+				stakeToken &&
+				stakeToken !== ZERO_ADDRESS &&
+				validatorWalletCreator &&
+				validatorWalletCreator !== ZERO_ADDRESS
+			) {
+				const requiredStakeWei = (await publicClient(L2_RPC).readContract({
+					address: rollupData["rollup"] as Address,
+					abi: rollupAbi,
+					functionName: "baseStake",
+				})) as bigint;
+				await ensureValidatorWalletStaked({
+					parentRpc: L2_RPC,
+					creatorAddress: validatorWalletCreator as `0x${string}`,
+					rollupAddress: rollupData["rollup"] as `0x${string}`,
+					stakeTokenAddress: stakeToken as `0x${string}`,
+					validatorAddress: accounts.validator.address,
+					validatorKey: accounts.validator.privateKey,
+					funderKey: accounts.funnel.privateKey,
+					requiredStakeWei,
+				});
+			}
+			composeUp(["l3node"], DOCKER_OPTS);
+			return markStepDone(state, "start-l3");
+		},
 		"wait-l3": async (state) => {
 			await waitForL3RpcWithParentChainNudges(300_000);
 			return markStepDone(state, "wait-l3");
@@ -703,7 +683,7 @@ function createL3Steps(): Record<string, StepRunner> {
 			if (!rollupData) {
 				throw new Error("Missing l3 rollup deployment data");
 			}
-			const existingL3BalanceWei = getBalanceWei(accounts.funnel.address, L3_RPC);
+			const existingL3BalanceWei = await getBalanceWei(accounts.funnel.address, L3_RPC);
 			if (existingL3BalanceWei >= L3_DEPOSIT_READY_THRESHOLD_WEI) {
 				console.log("[init] L3 funnel already funded; skipping inbox deposit");
 				return markStepDone(state, "deposit-eth-to-l3", {
@@ -711,39 +691,34 @@ function createL3Steps(): Record<string, StepRunner> {
 					reason: "l3 funnel already has balance",
 				});
 			}
-			const inbox = rollupData["inbox"] as string;
-			const balanceWei = getBalanceWei(accounts.funnel.address, L2_RPC);
+			const inbox = rollupData["inbox"] as Address;
+			const balanceWei = await getBalanceWei(accounts.funnel.address, L2_RPC);
 			const depositWei = clampDepositAmount({
 				balanceWei,
 				desiredWei: L3_DEPOSIT_TARGET_WEI,
 				reserveWei: L3_DEPOSIT_RESERVE_WEI,
 			});
 			console.log(`[init] Depositing ${depositWei} wei from L2 into L3 inbox`);
-			cast([
-				"send",
-				inbox,
-				"depositEth()",
-				"--value",
-				depositWei.toString(),
-				"--rpc-url",
-				L2_RPC,
-				"--private-key",
-				accounts.funnel.privateKey,
-			]);
-			await waitForBalanceAtLeast(
-				accounts.funnel.address,
-				L3_RPC,
-				L3_DEPOSIT_READY_THRESHOLD_WEI,
-			);
+			const funnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
+			const l2Client = walletClient(L2_RPC, accounts.funnel.privateKey);
+			await l2Client.writeContract({
+				account: funnelAccount,
+				chain: foundry,
+				address: inbox,
+				abi: inboxAbi,
+				functionName: "depositEth",
+				value: depositWei,
+			});
+			await waitForBalanceAtLeast(accounts.funnel.address, L3_RPC, L3_DEPOSIT_READY_THRESHOLD_WEI);
 			return markStepDone(state, "deposit-eth-to-l3");
 		},
-			"deploy-l3-token-bridge": async (state) => {
-				const rollupData = state.steps["deploy-l3-rollup"]?.data;
-				if (!rollupData) {
-					throw new Error("Missing l3 rollup deployment data");
+		"deploy-l3-token-bridge": async (state) => {
+			const rollupData = state.steps["deploy-l3-rollup"]?.data;
+			if (!rollupData) {
+				throw new Error("Missing l3 rollup deployment data");
 			}
-			ensureL2L3TokenBridgeFunding(L2_RPC, L3_RPC);
-				deployL2L3TokenBridge({
+			await ensureL2L3TokenBridgeFunding(L2_RPC, L3_RPC);
+			await deployL2L3TokenBridge({
 				compose: DOCKER_OPTS,
 				configDir: CONFIG_DIR,
 				rollupAddress: rollupData["rollup"] as string,
@@ -752,16 +727,16 @@ function createL3Steps(): Record<string, StepRunner> {
 				childRpc: "http://l3node:8547",
 				parentKey: accounts.userTokenBridgeDeployer.privateKey,
 				childKey: accounts.userTokenBridgeDeployer.privateKey,
-					parentWethOverride: getL2ChildWeth(CONFIG_DIR),
-				});
-				setL3StakerEnabled(true);
-				sendZeroAddressTransfer(L2_RPC);
-				sendZeroAddressTransfer(L2_RPC);
-				execOrThrow("sleep", ["5"], { timeout: 6_000 });
-				composeRestart(["l3node"], DOCKER_OPTS);
-				await waitForL3RpcWithParentChainNudges(120_000);
-				return markStepDone(state, "deploy-l3-token-bridge");
-			},
+				parentWethOverride: getL2ChildWeth(CONFIG_DIR),
+			});
+			setL3StakerEnabled(true);
+			await sendZeroAddressTransfer(L2_RPC);
+			await sendZeroAddressTransfer(L2_RPC);
+			execOrThrow("sleep", ["5"], { timeout: 6_000 });
+			composeRestart(["l3node"], DOCKER_OPTS);
+			await waitForL3RpcWithParentChainNudges(120_000);
+			return markStepDone(state, "deploy-l3-token-bridge");
+		},
 	};
 }
 
@@ -831,10 +806,7 @@ export const initCli = Cli.create("init", {
 			.boolean()
 			.optional()
 			.describe("Start init in the background and return the run metadata"),
-		foreground: z
-			.boolean()
-			.optional()
-			.describe("Internal worker mode for detached init runs"),
+		foreground: z.boolean().optional().describe("Internal worker mode for detached init runs"),
 		rebuild: z
 			.boolean()
 			.optional()
@@ -902,7 +874,7 @@ export const initCli = Cli.create("init", {
 					},
 					{ l1: L1_RPC, l2: L2_RPC, l3: L3_RPC },
 				);
-				verifySnapshotSemanticState(CONFIG_DIR, {
+				await verifySnapshotSemanticState(CONFIG_DIR, {
 					l1: L1_RPC,
 					l2: L2_RPC,
 					l3: L3_RPC,
@@ -933,12 +905,12 @@ export const initCli = Cli.create("init", {
 				console.log(`  TOTAL: ${(totalElapsed / 1000).toFixed(1)}s`);
 			}
 
-				if (!result.success) {
-					finishActiveRun("failed", {
-						exitCode: 1,
-						...(result.error ? { error: result.error } : {}),
-						...(result.failedStep ? { failedStep: result.failedStep } : {}),
-					});
+			if (!result.success) {
+				finishActiveRun("failed", {
+					exitCode: 1,
+					...(result.error ? { error: result.error } : {}),
+					...(result.failedStep ? { failedStep: result.failedStep } : {}),
+				});
 				return { success: false, failedStep: result.failedStep, error: result.error };
 			}
 
@@ -958,7 +930,7 @@ export const initCli = Cli.create("init", {
 				},
 				{ l1: L1_RPC, l2: L2_RPC, l3: L3_RPC },
 			);
-			verifySnapshotSemanticState(CONFIG_DIR, {
+			await verifySnapshotSemanticState(CONFIG_DIR, {
 				l1: L1_RPC,
 				l2: L2_RPC,
 				l3: L3_RPC,

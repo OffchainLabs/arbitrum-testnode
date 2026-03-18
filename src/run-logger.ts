@@ -1,6 +1,13 @@
-import { openSync, appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import {
+	appendFileSync,
+	existsSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
+import { dirname, resolve } from "node:path";
 import process from "node:process";
 import { format } from "node:util";
 
@@ -232,11 +239,14 @@ export function updateRunStep(step?: string): void {
 	saveRunRecord(getConfigDirFromRun(activeRunContext.run), activeRunContext.run);
 }
 
-export function finishActiveRun(status: RunStatus, options?: {
-	exitCode?: number;
-	error?: string;
-	failedStep?: string;
-}): void {
+export function finishActiveRun(
+	status: RunStatus,
+	options?: {
+		exitCode?: number;
+		error?: string;
+		failedStep?: string;
+	},
+): void {
 	if (!activeRunContext) {
 		return;
 	}
@@ -304,10 +314,7 @@ export function readTextLogTail(logFile: string, lines = 50): string[] {
 	if (!existsSync(logFile)) {
 		return [];
 	}
-	return readFileSync(logFile, "utf-8")
-		.trimEnd()
-		.split("\n")
-		.slice(-lines);
+	return readFileSync(logFile, "utf-8").trimEnd().split("\n").slice(-lines);
 }
 
 export function readEventLogTail(eventsFile: string, lines = 50): RunEvent[] {

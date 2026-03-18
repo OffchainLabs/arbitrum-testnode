@@ -10,8 +10,34 @@ import {
 } from "../src/token-bridge.js";
 
 vi.mock("../src/exec.js", () => ({
-	cast: vi.fn(),
 	execOrThrow: vi.fn(),
+}));
+
+vi.mock("../src/rpc.js", () => ({
+	getBalanceWei: vi.fn().mockResolvedValue(0n),
+	readContractOrZero: vi.fn().mockImplementation(
+		(_addr: string, _abi: unknown, functionName: string) => {
+			switch (functionName) {
+				case "outbox":
+					return "0x7777777777777777777777777777777777777777";
+				case "rollupEventInbox":
+					return "0x8888888888888888888888888888888888888888";
+				case "challengeManager":
+					return "0x9999999999999999999999999999999999999999";
+				default:
+					return "0x0000000000000000000000000000000000000000";
+			}
+		},
+	),
+	publicClient: vi.fn(),
+	walletClient: vi.fn().mockReturnValue({
+		sendTransaction: vi.fn().mockResolvedValue("0x"),
+		writeContract: vi.fn().mockResolvedValue("0x"),
+	}),
+	arbOwnerAbi: [],
+	rollupAbi: [],
+	erc20Abi: [],
+	gatewayRouterAbi: [],
 }));
 
 describe("getL2ChildWeth", () => {
@@ -59,7 +85,9 @@ describe("parseTokenBridgeCreatorAddress", () => {
 			"L1TokenBridgeCreator: 0x332Fb35767182F8ac9F9C1405db626105F6694E0",
 		].join("\n");
 
-		expect(parseTokenBridgeCreatorAddress(output)).toBe("0x2222222222222222222222222222222222222222");
+		expect(parseTokenBridgeCreatorAddress(output)).toBe(
+			"0x2222222222222222222222222222222222222222",
+		);
 	});
 
 	it("throws when the creator address is missing", () => {
@@ -109,7 +137,7 @@ describe("deployL2L3TokenBridge", () => {
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("uses the local token-bridge workspace for creator deploys on the L2 parent path", () => {
+	it("uses the local token-bridge workspace for creator deploys on the L2 parent path", async () => {
 		fs.writeFileSync(
 			path.join(tmpDir, "l3_deployment.json"),
 			JSON.stringify({
@@ -124,20 +152,6 @@ describe("deployL2L3TokenBridge", () => {
 			}),
 		);
 		const execOrThrow = vi.mocked(execModule.execOrThrow);
-		const cast = vi.mocked(execModule.cast);
-		cast.mockImplementation((args) => {
-			const signature = args[2];
-			switch (signature) {
-				case "outbox()(address)":
-					return "0x7777777777777777777777777777777777777777";
-				case "rollupEventInbox()(address)":
-					return "0x8888888888888888888888888888888888888888";
-				case "challengeManager()(address)":
-					return "0x9999999999999999999999999999999999999999";
-				default:
-					throw new Error(`unexpected cast call: ${args.join(" ")}`);
-			}
-		});
 		execOrThrow.mockImplementation((command, args) => {
 			if (
 				(command === "docker" && args.includes("deploy:token-bridge-creator")) ||
@@ -198,7 +212,7 @@ describe("deployL2L3TokenBridge", () => {
 			return "";
 		});
 
-		deployL2L3TokenBridge({
+		await deployL2L3TokenBridge({
 			compose: {
 				composeFile: "/tmp/docker-compose.yaml",
 				projectName: "arbitrum-testnode",
@@ -302,9 +316,7 @@ describe("deployL2L3TokenBridge", () => {
 				outbox: string;
 			};
 		};
-		expect(spec.deployment.tokenBridgeCreator).toBe(
-			"0x332Fb35767182F8ac9F9C1405db626105F6694E0",
-		);
+		expect(spec.deployment.tokenBridgeCreator).toBe("0x332Fb35767182F8ac9F9C1405db626105F6694E0");
 		expect(spec.parentRollupConfig).toEqual({
 			minimumAssertionPeriod: "1",
 			confirmPeriodBlocks: "1",

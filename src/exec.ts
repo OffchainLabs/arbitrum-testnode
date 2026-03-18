@@ -73,11 +73,6 @@ export function arbitrum(args: string[], options?: { cwd?: string; timeout?: num
 	return execOrThrow("arbitrum", args, options);
 }
 
-/** Run a `cast` (Foundry) command. Throws on failure. */
-export function cast(args: string[], options?: { cwd?: string; timeout?: number }): string {
-	return execOrThrow("cast", args, options);
-}
-
 /** Run an `anvil` command (non-blocking not supported here — use spawn separately). */
 export function anvil(args: string[]): ExecResult {
 	return exec("anvil", args);

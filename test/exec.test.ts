@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arbitrum, cast, exec, execOrThrow } from "../src/exec.js";
+import { arbitrum, exec, execOrThrow } from "../src/exec.js";
 
 describe("exec", () => {
 	it("runs a command and captures stdout", () => {
@@ -39,9 +39,3 @@ describe("arbitrum", () => {
 	});
 });
 
-describe("cast", () => {
-	it("calls exec with 'cast' as the command", () => {
-		const stdout = cast(["--version"]);
-		expect(stdout).toContain("cast");
-	});
-});
