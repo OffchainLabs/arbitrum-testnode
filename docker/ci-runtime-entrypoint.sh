@@ -120,4 +120,9 @@ if [ "$VARIANT" != "l2" ]; then
 		--auth.port=8553
 fi
 
+# Legacy compat: make network files accessible at /tokenbridge-data/ for SDK's gen:network
+mkdir -p /tokenbridge-data
+ln -sf /opt/arbitrum-testnode/export-config/l1l2_network.json /tokenbridge-data/l1l2_network.json
+ln -sf /opt/arbitrum-testnode/export-config/l2l3_network.json /tokenbridge-data/l2l3_network.json
+
 monitor_pids

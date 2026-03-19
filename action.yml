@@ -31,6 +31,10 @@ inputs:
     required: false
     default: "120"
     description: "Maximum time to wait for the runtime RPCs to become ready"
+  network-config-path:
+    required: false
+    default: ""
+    description: "Path(s) to overwrite with the exported localNetwork.json (comma-separated)"
 outputs:
   config-dir:
     description: "Directory containing the exported config files"
@@ -100,6 +104,7 @@ runs:
         INPUT_IMAGE_REPOSITORY: ${{ inputs.image-repository }}
         INPUT_L3_NODE: ${{ inputs.l3-node }}
         INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        INPUT_NETWORK_CONFIG_PATH: ${{ inputs.network-config-path }}
         INPUT_STARTUP_TIMEOUT_SECONDS: ${{ inputs.startup-timeout-seconds }}
         INPUT_VERSION: ${{ inputs.version }}
         GITHUB_WORKSPACE: ${{ github.workspace }}

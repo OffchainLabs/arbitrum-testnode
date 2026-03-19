@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { appendFileSync, copyFileSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { dirname } from "node:path";
 import { buildActionState, dockerRunArgs } from "./lib.mjs";
 
 function log(message) {
@@ -137,4 +138,15 @@ writeEnv("ARBITRUM_TESTNODE_L3_RPC_URL", state.rpcUrls.l3);
 writeEnv("ARBITRUM_TESTNODE_LOCAL_NETWORK_PATH", state.paths.localNetwork);
 writeEnv("ARBITRUM_TESTNODE_VARIANT", state.variant);
 writeEnv("ARBITRUM_TESTNODE_CONTAINER_NAME", state.containerName);
+
+const networkConfigPaths = (process.env["INPUT_NETWORK_CONFIG_PATH"] || "")
+	.split(",")
+	.map(p => p.trim())
+	.filter(Boolean);
+for (const dest of networkConfigPaths) {
+	mkdirSync(dirname(dest), { recursive: true });
+	copyFileSync(state.paths.localNetwork, dest);
+	log(`copied network config to ${dest}`);
+}
+
 log("done");
