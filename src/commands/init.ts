@@ -10,6 +10,7 @@ import { writeChainConfig } from "../chain-config.js";
 import { clampDepositAmount } from "../deposit-amount.js";
 import { composeRestart, composeUp, waitForRpc } from "../docker.js";
 import { arbitrum, execOrThrow } from "../exec.js";
+import { deployTestErc20 } from "../fee-token.js";
 import { ZERO_ADDRESS } from "../init-helpers.js";
 import { getL3ParentChainFundingPlan } from "../l3-parent-chain-funding.js";
 import { patchGeneratedL2NodeConfig, patchGeneratedL3NodeConfig } from "../node-config-patches.js";
@@ -566,7 +567,7 @@ async function fundL3DeployerAccounts(): Promise<void> {
 	}
 }
 
-function createL3Steps(): Record<string, StepRunner> {
+function createL3Steps(feeTokenDecimals?: number): Record<string, StepRunner> {
 	return {
 		"deploy-l3-rollup": async (state) => {
 			await fundL3DeployerAccounts();
@@ -575,7 +576,30 @@ function createL3Steps(): Record<string, StepRunner> {
 				owner: accounts.l3owner.address,
 			});
 			await applyGasEstimationWorkaround();
-			deployRollupViaDocker({
+
+			// If custom fee token is requested, deploy an ERC20 on L2
+			let feeTokenAddress: string | undefined;
+			if (feeTokenDecimals !== undefined) {
+				const mintAmount = 10n ** BigInt(feeTokenDecimals) * 1_000_000_000n;
+				feeTokenAddress = await deployTestErc20({
+					rpcUrl: L2_RPC,
+					deployerKey: accounts.userFeeTokenDeployer.privateKey,
+					name: `TestCustomFeeToken${feeTokenDecimals}`,
+					symbol: `FEE${feeTokenDecimals}`,
+					decimals: feeTokenDecimals,
+					initialMintAddresses: [
+						accounts.userFeeTokenDeployer.address,
+						accounts.funnel.address,
+						accounts.l3owner.address,
+					],
+					mintAmountPerAddress: mintAmount,
+				});
+				console.log(
+					`[init] Custom fee token deployed at ${feeTokenAddress} with ${feeTokenDecimals} decimals`,
+				);
+			}
+
+			const rollupEnv: Record<string, string> = {
 				PARENT_CHAIN_RPC: L2_RPC_DOCKER,
 				DEPLOYER_PRIVKEY: accounts.l3owner.privateKey,
 				PARENT_CHAIN_ID: "412346",
@@ -588,7 +612,12 @@ function createL3Steps(): Record<string, StepRunner> {
 				CHILD_CHAIN_CONFIG_PATH: "/config/l3_chain_config.json",
 				CHAIN_DEPLOYMENT_INFO: "/config/l3_deployment.json",
 				CHILD_CHAIN_INFO: "/config/l3_chain_info.json",
-			});
+			};
+			if (feeTokenAddress) {
+				rollupEnv["FEE_TOKEN_ADDRESS"] = feeTokenAddress;
+			}
+			deployRollupViaDocker(rollupEnv);
+
 			copyConfigFile("l3_deployment.json", "l3deployment.json");
 			const deployment = readDeployment("l3_deployment.json");
 			return markStepDone(state, "deploy-l3-rollup", {
@@ -599,6 +628,8 @@ function createL3Steps(): Record<string, StepRunner> {
 				upgradeExecutor: deployment["upgrade-executor"],
 				validatorWalletCreator: deployment["validator-wallet-creator"] ?? ZERO_ADDRESS,
 				stakeToken: deployment["stake-token"] ?? ZERO_ADDRESS,
+				...(feeTokenAddress ? { feeTokenAddress } : {}),
+				...(feeTokenDecimals !== undefined ? { feeTokenDecimals } : {}),
 			});
 		},
 		"generate-l3-config": async (state) => {
@@ -749,23 +780,23 @@ function createL3Steps(): Record<string, StepRunner> {
 	};
 }
 
-function makeStepRunners(): Record<string, StepRunner> {
+function makeStepRunners(feeTokenDecimals?: number): Record<string, StepRunner> {
 	return {
 		...createL1Steps(),
 		...createL2DeploySteps(),
 		...createL2RuntimeSteps(),
-		...createL3Steps(),
+		...createL3Steps(feeTokenDecimals),
 	};
 }
 
-async function runInitLoop(): Promise<{
+async function runInitLoop(feeTokenDecimals?: number): Promise<{
 	success: boolean;
 	failedStep?: string;
 	error?: string;
 	timings?: Record<string, number>;
 }> {
 	let state = loadState(CONFIG_DIR) ?? createState();
-	const runners = makeStepRunners();
+	const runners = makeStepRunners(feeTokenDecimals);
 	const steps = [...INIT_STEPS];
 	const timings: Record<string, number> = {};
 
@@ -815,6 +846,10 @@ export const initCli = Cli.create("init", {
 			.boolean()
 			.optional()
 			.describe("Start init in the background and return the run metadata"),
+		feeTokenDecimals: z
+			.number()
+			.optional()
+			.describe("Deploy a custom fee token ERC20 on L2 with this many decimals (16, 18, or 20)"),
 		foreground: z.boolean().optional().describe("Internal worker mode for detached init runs"),
 		rebuild: z
 			.boolean()
@@ -826,10 +861,30 @@ export const initCli = Cli.create("init", {
 			.describe("Snapshot release tag to install when the default snapshot is missing"),
 	}),
 	async run(c) {
+		const { feeTokenDecimals } = c.options;
+		if (
+			feeTokenDecimals !== undefined &&
+			feeTokenDecimals !== 16 &&
+			feeTokenDecimals !== 18 &&
+			feeTokenDecimals !== 20
+		) {
+			throw new Error("--fee-token-decimals must be 16, 18, or 20");
+		}
+
+		const snapshotId =
+			feeTokenDecimals !== undefined
+				? `l3-custom-${feeTokenDecimals}`
+				: DEFAULT_SNAPSHOT_ID;
+
 		if (c.options.background && !c.options.foreground) {
-			const extraArgs = c.options.snapshotVersion
-				? ["--snapshot-version", c.options.snapshotVersion]
-				: [];
+			const extraArgs = [
+				...(c.options.snapshotVersion
+					? ["--snapshot-version", c.options.snapshotVersion]
+					: []),
+				...(feeTokenDecimals !== undefined
+					? ["--fee-token-decimals", String(feeTokenDecimals)]
+					: []),
+			];
 			const run = startDetachedInitRun(CONFIG_DIR, PROJECT_ROOT, extraArgs);
 			return {
 				success: true,
@@ -844,7 +899,7 @@ export const initCli = Cli.create("init", {
 
 		try {
 			const totalStart = Date.now();
-			if (!c.options.rebuild && !hasSnapshot(CONFIG_DIR, DEFAULT_SNAPSHOT_ID)) {
+			if (!c.options.rebuild && !hasSnapshot(CONFIG_DIR, snapshotId)) {
 				console.log(
 					`[init] Installing snapshot release ${c.options.snapshotVersion ?? "latest"}...`,
 				);
@@ -858,16 +913,16 @@ export const initCli = Cli.create("init", {
 				);
 			}
 			const shouldRestoreSnapshot =
-				!c.options.rebuild && hasSnapshot(CONFIG_DIR, DEFAULT_SNAPSHOT_ID);
+				!c.options.rebuild && hasSnapshot(CONFIG_DIR, snapshotId);
 
 			if (shouldRestoreSnapshot) {
-				console.log(`[init] Restoring snapshot: ${DEFAULT_SNAPSHOT_ID}`);
+				console.log(`[init] Restoring snapshot: ${snapshotId}`);
 				stopRuntime({
 					composeFile: COMPOSE_FILE,
 					projectName: "arbitrum-testnode",
 					configDir: CONFIG_DIR,
 				});
-				restoreSnapshot(CONFIG_DIR, DEFAULT_SNAPSHOT_ID);
+				restoreSnapshot(CONFIG_DIR, snapshotId);
 				startRunLoggingFromEnv(CONFIG_DIR) ??
 					startInlineRunLogging(
 						CONFIG_DIR,
@@ -893,7 +948,7 @@ export const initCli = Cli.create("init", {
 				finishActiveRun("completed", { exitCode: 0 });
 				return {
 					success: true,
-					restoredSnapshot: DEFAULT_SNAPSHOT_ID,
+					restoredSnapshot: snapshotId,
 					totalSeconds: totalElapsed / 1000,
 				};
 			}
@@ -903,7 +958,7 @@ export const initCli = Cli.create("init", {
 					CONFIG_DIR,
 					c.options.foreground ? ["init", "--foreground"] : ["init"],
 				);
-			const result = await runInitLoop();
+			const result = await runInitLoop(feeTokenDecimals);
 			const totalElapsed = Date.now() - totalStart;
 
 			if (result.timings) {
@@ -928,7 +983,7 @@ export const initCli = Cli.create("init", {
 				projectName: "arbitrum-testnode",
 				configDir: CONFIG_DIR,
 			});
-			const snapshot = captureSnapshot(CONFIG_DIR, COMPOSE_FILE, DEFAULT_SNAPSHOT_ID);
+			const snapshot = captureSnapshot(CONFIG_DIR, COMPOSE_FILE, snapshotId);
 			anvilProcess = startAnvilWithState(CONFIG_DIR);
 			await waitForRpc(L1_RPC);
 			await startNitroFromSnapshot(
