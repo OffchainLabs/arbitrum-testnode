@@ -13,6 +13,7 @@ COPY .ci-runtime-context/runtime /opt/arbitrum-testnode/runtime
 COPY .ci-runtime-context/runtime-config /opt/arbitrum-testnode/runtime-config
 USER root
 RUN chown -R user:user /opt/arbitrum-testnode/runtime /opt/arbitrum-testnode/runtime-config
+RUN mkdir -p /tokenbridge-data && chown user:user /tokenbridge-data
 USER user
 
 EXPOSE 8545 8547 8548 8549 8550
