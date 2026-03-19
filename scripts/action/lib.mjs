@@ -37,6 +37,18 @@ export const VARIANTS = {
 		snapshotId: "l3-custom-20",
 		tagSuffix: "l3-custom-20",
 	},
+	"l3-custom-6": {
+		hostPorts: {
+			l1: 8545,
+			l2: 8547,
+			l2Ws: 8548,
+			l3: 3347,
+			l3Ws: 3348,
+		},
+		l3Enabled: true,
+		snapshotId: "l3-custom-6",
+		tagSuffix: "l3-custom-6",
+	},
 	"l3-custom-16": {
 		hostPorts: {
 			l1: 8545,
@@ -75,8 +87,8 @@ function normalizeFeeTokenDecimals(value) {
 		return "";
 	}
 	const normalized = String(value);
-	if (!["16", "18", "20"].includes(normalized)) {
-		throw new Error("fee-token-decimals must be one of 16, 18, or 20");
+	if (!["6", "16", "18", "20"].includes(normalized)) {
+		throw new Error("fee-token-decimals must be one of 6, 16, 18, or 20");
 	}
 	return normalized;
 }

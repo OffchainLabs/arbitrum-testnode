@@ -849,7 +849,7 @@ export const initCli = Cli.create("init", {
 		feeTokenDecimals: z
 			.number()
 			.optional()
-			.describe("Deploy a custom fee token ERC20 on L2 with this many decimals (16, 18, or 20)"),
+			.describe("Deploy a custom fee token ERC20 on L2 with this many decimals (6, 16, 18, or 20)"),
 		foreground: z.boolean().optional().describe("Internal worker mode for detached init runs"),
 		rebuild: z
 			.boolean()
@@ -864,11 +864,12 @@ export const initCli = Cli.create("init", {
 		const { feeTokenDecimals } = c.options;
 		if (
 			feeTokenDecimals !== undefined &&
+			feeTokenDecimals !== 6 &&
 			feeTokenDecimals !== 16 &&
 			feeTokenDecimals !== 18 &&
 			feeTokenDecimals !== 20
 		) {
-			throw new Error("--fee-token-decimals must be 16, 18, or 20");
+			throw new Error("--fee-token-decimals must be 6, 16, 18, or 20");
 		}
 
 		const snapshotId =

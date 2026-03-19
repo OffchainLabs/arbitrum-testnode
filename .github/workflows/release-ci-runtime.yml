@@ -24,6 +24,7 @@ on:
         options:
           - l2
           - l3-eth
+          - l3-custom-6
           - l3-custom-16
           - l3-custom-18
           - l3-custom-20
