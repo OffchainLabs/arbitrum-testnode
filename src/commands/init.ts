@@ -710,6 +710,15 @@ function createL3Steps(): Record<string, StepRunner> {
 				value: depositWei,
 			});
 			await waitForBalanceAtLeast(accounts.funnel.address, L3_RPC, L3_DEPOSIT_READY_THRESHOLD_WEI);
+			// Fund userFeeTokenDeployer on L3 so portal E2E tests can use it as a funder
+			const l3Client = walletClient(L3_RPC, accounts.funnel.privateKey);
+			const l3FunnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
+			await l3Client.sendTransaction({
+				account: l3FunnelAccount,
+				to: accounts.userFeeTokenDeployer.address,
+				value: parseEther("10"),
+			});
+			console.log("[init] Funded userFeeTokenDeployer on L3 with 10 ETH");
 			return markStepDone(state, "deposit-eth-to-l3");
 		},
 		"deploy-l3-token-bridge": async (state) => {
