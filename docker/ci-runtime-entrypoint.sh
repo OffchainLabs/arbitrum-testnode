@@ -118,6 +118,29 @@ if [ "$VARIANT" != "l2" ]; then
 		--ws.addr=0.0.0.0 \
 		--ws.port=8550 \
 		--auth.port=8553
+
+	# Wait for L3 RPC to be ready, then fund test accounts
+	echo "waiting for L3 RPC on port 8549..."
+	L3_DEADLINE=$(($(date +%s) + 120))
+	while ! cast chain-id --rpc-url http://127.0.0.1:8549 >/dev/null 2>&1; do
+		if [ "$(date +%s)" -ge "$L3_DEADLINE" ]; then
+			echo "L3 RPC did not start within 120s" >&2
+			break
+		fi
+		# Nudge L2 to produce blocks so L3 can sync
+		cast send --private-key 0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659 \
+			--rpc-url http://127.0.0.1:8547 --value 0 \
+			0x0000000000000000000000000000000000000000 >/dev/null 2>&1 || true
+		sleep 2
+	done
+
+	# Fund userFeeTokenDeployer on L3 (portal E2E tests use it as funder for custom fee token tests)
+	echo "funding userFeeTokenDeployer on L3..."
+	cast send --private-key 0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659 \
+		--rpc-url http://127.0.0.1:8549 --value 10ether \
+		0x9205AE47eC1982d06a4C57753060B763850b3Cd3 >/dev/null 2>&1 && \
+		echo "userFeeTokenDeployer funded on L3" || \
+		echo "warning: failed to fund userFeeTokenDeployer on L3"
 fi
 
 # Legacy compat: make network files accessible at /tokenbridge-data/ for SDK's gen:network

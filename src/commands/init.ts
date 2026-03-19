@@ -789,13 +789,13 @@ function makeStepRunners(feeTokenDecimals?: number): Record<string, StepRunner> 
 	};
 }
 
-async function runInitLoop(feeTokenDecimals?: number): Promise<{
+async function runInitLoop(feeTokenDecimals?: number, rebuild?: boolean): Promise<{
 	success: boolean;
 	failedStep?: string;
 	error?: string;
 	timings?: Record<string, number>;
 }> {
-	let state = loadState(CONFIG_DIR) ?? createState();
+	let state = rebuild ? createState() : (loadState(CONFIG_DIR) ?? createState());
 	const runners = makeStepRunners(feeTokenDecimals);
 	const steps = [...INIT_STEPS];
 	const timings: Record<string, number> = {};
@@ -958,7 +958,7 @@ export const initCli = Cli.create("init", {
 					CONFIG_DIR,
 					c.options.foreground ? ["init", "--foreground"] : ["init"],
 				);
-			const result = await runInitLoop(feeTokenDecimals);
+			const result = await runInitLoop(feeTokenDecimals, c.options.rebuild);
 			const totalElapsed = Date.now() - totalStart;
 
 			if (result.timings) {

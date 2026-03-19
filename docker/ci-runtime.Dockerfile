@@ -6,6 +6,7 @@ FROM ${FOUNDRY_IMAGE} AS foundry
 FROM ${NITRO_IMAGE}
 
 COPY --from=foundry /usr/local/bin/anvil /usr/local/bin/anvil
+COPY --from=foundry /usr/local/bin/cast /usr/local/bin/cast
 COPY --chmod=755 docker/ci-runtime-entrypoint.sh /usr/local/bin/arbitrum-testnode-ci
 COPY .ci-runtime-context/export-config /opt/arbitrum-testnode/export-config
 COPY .ci-runtime-context/metadata.json /opt/arbitrum-testnode/metadata.json
