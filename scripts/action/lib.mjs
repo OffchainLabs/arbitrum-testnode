@@ -196,6 +196,8 @@ export function dockerRunArgs(state) {
 		`127.0.0.1:${hostPorts.l2}:8547`,
 		"-p",
 		`127.0.0.1:${hostPorts.l2Ws}:8548`,
+		"-p",
+		"127.0.0.1:8080:8080",
 	];
 	if (state.variantDefinition.l3Enabled) {
 		args.push("-p", `127.0.0.1:${hostPorts.l3}:8549`);
