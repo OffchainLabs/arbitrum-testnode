@@ -3,6 +3,12 @@ name: Test Action
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      snapshot-version:
+        description: "Snapshot release tag to install"
+        required: false
+        default: "v0.1.6"
+        type: string
 
 jobs:
   test-l3-eth-action:
@@ -15,6 +21,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install snapshot
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm dev snapshot install --force --release-tag "${{ inputs.snapshot-version || 'v0.1.6' }}"
 
       - name: Prepare runtime context
         run: node scripts/ci/prepare-runtime-context.mjs --variant l3-eth --snapshot-id default
@@ -44,3 +63,11 @@ jobs:
           curl -s -X POST -H 'Content-Type: application/json' \
             -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' \
             "${{ steps.action.outputs.l3-rpc-url }}"
+
+      - name: Validate health endpoint
+        run: |
+          curl -sf http://127.0.0.1:8080/health
+          curl -sf http://127.0.0.1:8080/config/localNetwork.json > /dev/null
+
+      - name: Validate config server index
+        run: curl -sf http://127.0.0.1:8080/
