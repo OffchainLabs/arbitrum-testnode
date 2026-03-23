@@ -33,6 +33,7 @@ jobs:
       - name: Install snapshot
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TESTNODE_SNAPSHOT_GH_REPO: ${{ github.repository }}
         run: pnpm dev snapshot install --force --release-tag "${{ inputs.snapshot-version || 'v0.1.6' }}"
 
       - name: Prepare runtime context
