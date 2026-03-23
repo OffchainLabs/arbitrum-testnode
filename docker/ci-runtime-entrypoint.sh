@@ -125,4 +125,7 @@ mkdir -p /tokenbridge-data
 ln -sf /opt/arbitrum-testnode/export-config/l1l2_network.json /tokenbridge-data/l1l2_network.json
 ln -sf /opt/arbitrum-testnode/export-config/l2l3_network.json /tokenbridge-data/l2l3_network.json
 
+# Serve config files and health endpoint over HTTP for service container consumers
+start_background python3 /usr/local/bin/config-server.py 8080
+
 monitor_pids
