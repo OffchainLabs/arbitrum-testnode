@@ -34,8 +34,6 @@ export function startAnvilWithState(configDir: string): ChildProcess {
 			"0.0.0.0",
 			"--port",
 			"8545",
-			"--block-time",
-			"1",
 			"--accounts",
 			"10",
 			"--balance",

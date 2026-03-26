@@ -163,7 +163,10 @@ function runCompose(
 }
 
 function runAdminCli(args: string[], timeoutMs = BRIDGE_DEPLOY_TIMEOUT_MS): string {
-	return execOrThrow(ADMIN_CLI_NODE_BIN, [getAdminCliEntry(), ...args], { timeout: timeoutMs });
+	const cliArgs = args.includes("--yes") ? args : ["--yes", ...args];
+	return execOrThrow(ADMIN_CLI_NODE_BIN, [getAdminCliEntry(), ...cliArgs], {
+		timeout: timeoutMs,
+	});
 }
 
 async function getBalanceWei(address: Address, rpcUrl: string): Promise<bigint> {

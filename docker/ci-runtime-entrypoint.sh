@@ -40,7 +40,6 @@ echo "variant: $VARIANT"
 start_background /usr/local/bin/anvil \
 	--host 0.0.0.0 \
 	--port 8545 \
-	--block-time 1 \
 	--chain-id 1337 \
 	--mnemonic "indoor dish desk flag debris potato excuse depart ticket judge file exit" \
 	--load-state "$DATA_ROOT/anvil-state"
@@ -55,6 +54,16 @@ while ! grep -q ":2161 " /proc/net/tcp 2>/dev/null; do
 	sleep 1
 done
 echo "anvil ready"
+
+start_background sh -c '
+while true; do
+	curl -sf \
+		-H "content-type: application/json" \
+		--data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"evm_mine\",\"params\":[]}" \
+		http://127.0.0.1:8545 > /dev/null || true
+	sleep 0.1
+done
+'
 
 start_background env HOME="$DATA_ROOT/sequencer" /usr/local/bin/nitro \
 	--validation.wasm.allowed-wasm-module-roots "$NITRO_WASM_ROOTS" \

@@ -238,13 +238,14 @@ async function ensureL2ValidatorFunding(
 		console.log(`[init] Wrapping ${shortfallWei} wei into stake token for L2 validator`);
 		const funnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
 		const depositClient = walletClient(L1_RPC, accounts.funnel.privateKey);
-		await depositClient.writeContract({
+		const depositHash = await depositClient.writeContract({
 			account: funnelAccount,
 			address: stakeTokenAddress,
 			abi: erc20Abi,
 			functionName: "deposit",
 			value: shortfallWei,
 		});
+		await publicClient(L1_RPC).waitForTransactionReceipt({ hash: depositHash });
 	}
 
 	console.log(`[init] Funding L2 validator stake token with ${neededStakeWei} units`);
