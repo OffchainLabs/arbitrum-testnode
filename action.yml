@@ -19,6 +19,10 @@ inputs:
     required: false
     default: ""
     description: "Custom L3 fee-token decimals (6, 18, or 20) when l3-node=true"
+  nitro-contracts-version:
+    description: "Nitro contracts version (e.g. v2.1, v3.2)"
+    required: false
+    default: "v3.2"
   output-dir:
     required: false
     default: ""
@@ -66,6 +70,9 @@ outputs:
   variant:
     description: "Resolved runtime variant"
     value: ${{ steps.resolve.outputs.variant }}
+  nitro-contracts-version:
+    description: "Resolved nitro contracts version"
+    value: ${{ steps.resolve.outputs.nitro-contracts-version }}
 runs:
   using: composite
   steps:
@@ -76,6 +83,7 @@ runs:
         INPUT_FEE_TOKEN_DECIMALS: ${{ inputs.fee-token-decimals }}
         INPUT_IMAGE_REPOSITORY: ${{ inputs.image-repository }}
         INPUT_L3_NODE: ${{ inputs.l3-node }}
+        INPUT_NITRO_CONTRACTS_VERSION: ${{ inputs.nitro-contracts-version }}
         INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
         INPUT_VERSION: ${{ inputs.version }}
         GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -103,6 +111,7 @@ runs:
         INPUT_FEE_TOKEN_DECIMALS: ${{ inputs.fee-token-decimals }}
         INPUT_IMAGE_REPOSITORY: ${{ inputs.image-repository }}
         INPUT_L3_NODE: ${{ inputs.l3-node }}
+        INPUT_NITRO_CONTRACTS_VERSION: ${{ inputs.nitro-contracts-version }}
         INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
         INPUT_NETWORK_CONFIG_PATH: ${{ inputs.network-config-path }}
         INPUT_STARTUP_TIMEOUT_SECONDS: ${{ inputs.startup-timeout-seconds }}

@@ -100,5 +100,13 @@ describe("prepare-runtime-context", () => {
 		expect(existsSync(join(outputDir, "runtime", "sequencer", ".arbitrum", "seq.txt"))).toBe(true);
 		expect(existsSync(join(outputDir, "runtime", "validator", ".arbitrum", "val.txt"))).toBe(true);
 		expect(existsSync(join(outputDir, "runtime", "l3node", ".arbitrum", "l3.txt"))).toBe(true);
+
+		const metadata = JSON.parse(readFileSync(join(outputDir, "metadata.json"), "utf-8"));
+		expect(metadata).toEqual({
+			l3Enabled: true,
+			nitroContractsVersion: "",
+			snapshotId: "default",
+			variant: "l3-eth",
+		});
 	});
 });

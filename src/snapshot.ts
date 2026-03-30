@@ -34,6 +34,7 @@ export interface SnapshotManifest {
 		l2: string;
 		l3: string;
 	};
+	nitroContractsVersion?: string;
 	requiredFiles: string[];
 	configChecksums: Record<string, string>;
 	volumeArchives: string[];

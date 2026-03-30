@@ -2,6 +2,23 @@ import { isAbsolute, join, resolve } from "node:path";
 
 export const DEFAULT_IMAGE_REPOSITORY = "ghcr.io/offchainlabs/arbitrum-testnode-ci";
 
+export const CONTRACTS_VERSIONS = {
+	"v2.1": { tagComponent: "nc2.1" },
+	"v3.2": { tagComponent: "nc3.2" },
+};
+
+export const DEFAULT_CONTRACTS_VERSION = "v3.2";
+
+export function normalizeContractsVersion(value) {
+	const v = value || DEFAULT_CONTRACTS_VERSION;
+	if (!CONTRACTS_VERSIONS[v]) {
+		throw new Error(
+			`nitro-contracts-version must be one of: ${Object.keys(CONTRACTS_VERSIONS).join(", ")}`,
+		);
+	}
+	return v;
+}
+
 export const VARIANTS = {
 	l2: {
 		hostPorts: {
@@ -108,7 +125,7 @@ export function resolveVariant({ feeTokenDecimals, l3Node }) {
 	return `l3-custom-${decimals}`;
 }
 
-export function buildImageRef({ imageRepository, variant, version }) {
+export function buildImageRef({ contractsVersion, imageRepository, variant, version }) {
 	if (!version) {
 		throw new Error("version is required");
 	}
@@ -117,7 +134,8 @@ export function buildImageRef({ imageRepository, variant, version }) {
 	if (!definition) {
 		throw new Error(`Unknown variant ${variant}`);
 	}
-	return `${repository}:${version}-${definition.tagSuffix}`;
+	const cv = normalizeContractsVersion(contractsVersion);
+	return `${repository}:${version}-${CONTRACTS_VERSIONS[cv].tagComponent}-${definition.tagSuffix}`;
 }
 
 export function defaultOutputDir({ runnerTemp, variant, version }) {
@@ -133,6 +151,7 @@ function sanitizeContainerName(value) {
 
 export function buildActionState({
 	containerName,
+	contractsVersion,
 	feeTokenDecimals,
 	imageRepository,
 	l3Node,
@@ -146,6 +165,7 @@ export function buildActionState({
 	if (!definition) {
 		throw new Error(`Unknown variant ${variant}`);
 	}
+	const resolvedContractsVersion = normalizeContractsVersion(contractsVersion);
 	const resolvedOutputDir = outputDir
 		? isAbsolute(outputDir)
 			? outputDir
@@ -163,7 +183,13 @@ export function buildActionState({
 	return {
 		configDir,
 		containerName: resolvedContainerName,
-		imageRef: buildImageRef({ imageRepository, variant, version }),
+		contractsVersion: resolvedContractsVersion,
+		imageRef: buildImageRef({
+			contractsVersion: resolvedContractsVersion,
+			imageRepository,
+			variant,
+			version,
+		}),
 		outputDir: resolvedOutputDir,
 		paths: {
 			l1BridgeUiConfig: join(configDir, "l1-l2-admin", "bridgeUiConfig.json"),
