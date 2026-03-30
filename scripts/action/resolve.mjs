@@ -11,6 +11,7 @@ function writeOutput(key, value) {
 
 const state = buildActionState({
 	containerName: process.env["INPUT_CONTAINER_NAME"],
+	contractsVersion: process.env["INPUT_NITRO_CONTRACTS_VERSION"],
 	feeTokenDecimals: process.env["INPUT_FEE_TOKEN_DECIMALS"],
 	imageRepository: process.env["INPUT_IMAGE_REPOSITORY"],
 	l3Node: process.env["INPUT_L3_NODE"],
@@ -33,5 +34,6 @@ writeOutput("l3-rpc-url", state.rpcUrls.l3);
 writeOutput("local-network-path", state.paths.localNetwork);
 writeOutput("output-dir", state.outputDir);
 writeOutput("snapshot-id", state.snapshotId);
+writeOutput("nitro-contracts-version", state.contractsVersion);
 writeOutput("variant", state.variant);
 writeOutput("l3-enabled", state.variantDefinition.l3Enabled ? "true" : "false");

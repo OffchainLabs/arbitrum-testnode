@@ -40,7 +40,7 @@ jobs:
         run: node scripts/ci/prepare-runtime-context.mjs --variant l3-eth --snapshot-id default
 
       - name: Build local runtime image
-        run: docker build -f docker/ci-runtime.Dockerfile -t local/arbitrum-testnode-ci:${{ github.sha }}-l3-eth .
+        run: docker build -f docker/ci-runtime.Dockerfile -t local/arbitrum-testnode-ci:${{ github.sha }}-nc3.2-l3-eth .
 
       - name: Run action
         id: action
@@ -48,6 +48,7 @@ jobs:
         with:
           image-repository: local/arbitrum-testnode-ci
           l3-node: true
+          nitro-contracts-version: v3.2
           version: ${{ github.sha }}
 
       - name: Validate outputs

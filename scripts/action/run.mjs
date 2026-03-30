@@ -44,6 +44,7 @@ function waitForRpc(url, timeoutMs) {
 
 const state = buildActionState({
 	containerName: process.env["INPUT_CONTAINER_NAME"],
+	contractsVersion: process.env["INPUT_NITRO_CONTRACTS_VERSION"],
 	feeTokenDecimals: process.env["INPUT_FEE_TOKEN_DECIMALS"],
 	imageRepository: process.env["INPUT_IMAGE_REPOSITORY"],
 	l3Node: process.env["INPUT_L3_NODE"],
@@ -136,8 +137,10 @@ writeEnv("ARBITRUM_TESTNODE_L2_BRIDGE_UI_CONFIG_PATH", state.paths.l2BridgeUiCon
 writeEnv("ARBITRUM_TESTNODE_L2_RPC_URL", state.rpcUrls.l2);
 writeEnv("ARBITRUM_TESTNODE_L3_RPC_URL", state.rpcUrls.l3);
 writeEnv("ARBITRUM_TESTNODE_LOCAL_NETWORK_PATH", state.paths.localNetwork);
+writeEnv("ARBITRUM_TESTNODE_NITRO_CONTRACTS_VERSION", state.contractsVersion);
 writeEnv("ARBITRUM_TESTNODE_VARIANT", state.variant);
 writeEnv("ARBITRUM_TESTNODE_CONTAINER_NAME", state.containerName);
+writeEnv("INTEGRATION_TEST_NITRO_CONTRACTS_BRANCH", state.contractsVersion);
 
 const networkConfigPaths = (process.env["INPUT_NETWORK_CONFIG_PATH"] || "")
 	.split(",")
