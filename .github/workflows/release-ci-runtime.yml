@@ -22,6 +22,7 @@ on:
         default: "l3-eth"
         type: choice
         options:
+          - all
           - l2
           - l3-eth
           - l3-custom-6
@@ -34,12 +35,48 @@ on:
         default: "v3.2"
         type: choice
         options:
+          - all
           - v2.1
           - v3.2
 
 jobs:
-  publish-runtime-image:
+  resolve-publish-matrix:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Build publish matrix
+        id: matrix
+        env:
+          INPUT_VARIANT: ${{ inputs.variant }}
+          INPUT_CONTRACTS_VERSION: ${{ inputs.nitro-contracts-version }}
+        run: >-
+          node --input-type=module -e
+          "const variants =
+          process.env.INPUT_VARIANT === 'all'
+          ? ['l2', 'l3-eth', 'l3-custom-6', 'l3-custom-16', 'l3-custom-18', 'l3-custom-20']
+          : [process.env.INPUT_VARIANT];
+          const contractsVersions =
+          process.env.INPUT_CONTRACTS_VERSION === 'all'
+          ? ['v2.1', 'v3.2']
+          : [process.env.INPUT_CONTRACTS_VERSION];
+          const include = [];
+          for (const variant of variants) {
+            for (const contractsVersion of contractsVersions) {
+              include.push({ variant, contractsVersion });
+            }
+          }
+          const output = process.env.GITHUB_OUTPUT;
+          if (!output) throw new Error('GITHUB_OUTPUT is required');
+          const { appendFileSync } = await import('node:fs');
+          appendFileSync(output, 'matrix=' + JSON.stringify({ include }) + '\\n');"
+
+  publish-runtime-image:
+    needs: resolve-publish-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.resolve-publish-matrix.outputs.matrix) }}
     permissions:
       contents: read
       packages: write
@@ -60,18 +97,36 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Resolve variant metadata
+        id: variant
+        run: >-
+          node --input-type=module -e
+          "import { VARIANTS } from './scripts/action/lib.mjs';
+          const variant = process.env['INPUT_VARIANT'];
+          const definition = VARIANTS[variant];
+          if (!definition) throw new Error(\`Unknown variant \${variant}\`);
+          const output = process.env['GITHUB_OUTPUT'];
+          if (!output) throw new Error('GITHUB_OUTPUT is required');
+          const { appendFileSync } = await import('node:fs');
+          appendFileSync(output, \`snapshot-id=\${definition.snapshotId}\\n\`);"
+        env:
+          INPUT_VARIANT: ${{ matrix.variant }}
+
       - name: Install snapshot release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TESTNODE_SNAPSHOT_GH_REPO: ${{ inputs.snapshot-repo || github.repository }}
-        run: pnpm dev snapshot install --force --release-tag "${{ inputs.snapshot-version }}"
+        run: >-
+          pnpm dev snapshot install --force
+          --id "${{ steps.variant.outputs.snapshot-id }}"
+          --release-tag "${{ inputs.snapshot-version }}"
 
       - name: Prepare runtime context
         run: >-
           node scripts/ci/prepare-runtime-context.mjs
-          --variant "${{ inputs.variant }}"
-          --snapshot-id default
-          --nitro-contracts-version "${{ inputs.nitro-contracts-version }}"
+          --variant "${{ matrix.variant }}"
+          --snapshot-id "${{ steps.variant.outputs.snapshot-id }}"
+          --nitro-contracts-version "${{ matrix.contractsVersion }}"
 
       - name: Lowercase owner
         id: lower
@@ -79,7 +134,7 @@ jobs:
 
       - name: Contracts tag
         id: nc
-        run: echo "tag=nc$(echo '${{ inputs.nitro-contracts-version }}' | sed 's/^v//')" >> "$GITHUB_OUTPUT"
+        run: echo "tag=nc$(echo '${{ matrix.contractsVersion }}' | sed 's/^v//')" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -94,4 +149,4 @@ jobs:
           context: .
           file: docker/ci-runtime.Dockerfile
           push: true
-          tags: ghcr.io/${{ steps.lower.outputs.owner }}/arbitrum-testnode-ci:${{ inputs.version }}-${{ steps.nc.outputs.tag }}-${{ inputs.variant }}
+          tags: ghcr.io/${{ steps.lower.outputs.owner }}/arbitrum-testnode-ci:${{ inputs.version }}-${{ steps.nc.outputs.tag }}-${{ matrix.variant }}

@@ -34,6 +34,7 @@ const snapshotOptions = z.object({
 
 const snapshotInstallOptions = z.object({
 	force: z.boolean().optional().describe("Replace an existing local snapshot"),
+	id: z.string().optional().describe("Install the archive into this local snapshot id"),
 	repo: z
 		.string()
 		.optional()
@@ -145,6 +146,7 @@ snapshotCli.command("install", {
 			composeFile: COMPOSE_FILE,
 			configDir: CONFIG_DIR,
 			...(c.options.force !== undefined ? { force: c.options.force } : {}),
+			...(c.options.id ? { snapshotId: c.options.id } : {}),
 			...(c.options.releaseTag ? { version: c.options.releaseTag } : {}),
 			...(c.options.repo ? { repo: c.options.repo } : {}),
 			...(c.options.url ? { url: c.options.url } : {}),
