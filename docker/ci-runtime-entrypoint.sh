@@ -87,7 +87,7 @@ start_background env HOME="$DATA_ROOT/validator" /usr/local/bin/nitro \
 	--node.staker.staker-interval=100ms \
 	--node.staker.make-assertion-interval=100ms \
 	--node.staker.confirmation-blocks=1 \
-	--node.bold.check-staker-switch-interval=876000h \
+	--node.bold.check-staker-switch-interval=1s \
 	--node.bold.rpc-block-number=latest \
 	--node.bold.assertion-posting-interval=100ms \
 	--node.bold.assertion-confirming-interval=100ms \
@@ -110,6 +110,8 @@ if [ "$VARIANT" != "l2" ]; then
 		--validation.wasm.allowed-wasm-module-roots "$NITRO_WASM_ROOTS" \
 		--conf.file="$CONFIG_ROOT/l3-nodeConfig.json" \
 		--node.dangerous.disable-blob-reader \
+		--node.bold.check-staker-switch-interval=1s \
+		--node.staker.dangerous.without-block-validator \
 		--http.addr=0.0.0.0 \
 		--http.port=8549 \
 		--http.api=net,web3,eth,txpool,debug \
