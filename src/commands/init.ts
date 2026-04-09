@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Cli, z } from "incur";
 import type { Address } from "viem";
-import { parseEther } from "viem";
+import { parseAbiItem, parseEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { accounts } from "../accounts.js";
 import { writeChainConfig } from "../chain-config.js";
@@ -347,6 +347,38 @@ function deployRollupViaDocker(envVars: Record<string, string>): void {
 	execOrThrow("docker", args, { timeout: 300_000 });
 }
 
+async function findRollupCreatorAddress(parentRpcUrl: string, rollupAddress: Address, deployedAtBlock: number): Promise<Address> {
+	const client = publicClient(parentRpcUrl);
+	const events = [
+		// v3.2 (11 params)
+		parseAbiItem("event RollupCreated(address indexed rollupAddress, address indexed nativeToken, address inboxAddress, address outbox, address rollupEventInbox, address challengeManager, address adminProxy, address sequencerInbox, address bridge, address upgradeExecutor, address validatorWalletCreator)"),
+		// v2.1 (12 params)
+		parseAbiItem("event RollupCreated(address indexed rollupAddress, address indexed nativeToken, address inboxAddress, address outbox, address rollupEventInbox, address challengeManager, address adminProxy, address sequencerInbox, address bridge, address upgradeExecutorAddress, address validatorUtils, address validatorWalletCreator)"),
+	] as const;
+	for (const event of events) {
+		const logs = await client.getLogs({
+			event,
+			args: { rollupAddress },
+			fromBlock: BigInt(Math.max(0, deployedAtBlock - 1)),
+			toBlock: BigInt(deployedAtBlock + 1),
+		});
+		if (logs.length > 0) return logs[0]!.address;
+	}
+	console.warn(`[init] Warning: could not find RollupCreated event for ${rollupAddress}`);
+	return "0x0000000000000000000000000000000000000000";
+}
+
+async function addRollupCreatorToDeployment(parentRpcUrl: string, deploymentPath: string): Promise<void> {
+	const deployment = JSON.parse(readFileSync(deploymentPath, "utf-8")) as Record<string, unknown>;
+	if (deployment["rollup-creator"]) return;
+	const rollupAddress = deployment["rollup"] as Address;
+	const deployedAt = deployment["deployed-at"] as number;
+	if (!rollupAddress || deployedAt === undefined) return;
+	const rollupCreator = await findRollupCreatorAddress(parentRpcUrl, rollupAddress, deployedAt);
+	deployment["rollup-creator"] = rollupCreator;
+	writeFileSync(deploymentPath, JSON.stringify(deployment, null, 2));
+}
+
 function patchConfigUrl(configPath: string, hostUrl: string, dockerUrl: string): void {
 	const content = readFileSync(configPath, "utf-8");
 	const patched = content.replaceAll(hostUrl, dockerUrl);
@@ -401,6 +433,7 @@ function createL2DeploySteps(): Record<string, StepRunner> {
 				CHAIN_DEPLOYMENT_INFO: "/config/l2_deployment.json",
 				CHILD_CHAIN_INFO: "/config/l2_chain_info.json",
 			});
+			await addRollupCreatorToDeployment(L1_RPC, resolve(CONFIG_DIR, "l2_deployment.json"));
 			copyConfigFile("l2_deployment.json", "deployment.json");
 			const deployment = readDeployment("l2_deployment.json");
 			return markStepDone(state, "deploy-l2-rollup", {
@@ -617,6 +650,7 @@ function createL3Steps(feeTokenDecimals?: number): Record<string, StepRunner> {
 				rollupEnv["FEE_TOKEN_ADDRESS"] = feeTokenAddress;
 			}
 			deployRollupViaDocker(rollupEnv);
+			await addRollupCreatorToDeployment(L2_RPC, resolve(CONFIG_DIR, "l3_deployment.json"));
 
 			copyConfigFile("l3_deployment.json", "l3deployment.json");
 			const deployment = readDeployment("l3_deployment.json");
