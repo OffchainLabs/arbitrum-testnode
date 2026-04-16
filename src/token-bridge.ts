@@ -54,7 +54,6 @@ const PORTAL_LOCAL_NETWORK_PATH =
 	);
 const BRIDGE_DEPLOY_TIMEOUT_MS = 300_000;
 const FUNDING_RESERVE_WEI = 1n * 10n ** 18n;
-const L2_L3_FACTORY_GAS_LIMIT = "10000000";
 const TOKENBRIDGE_DEPLOYER_TARGET_L1_WEI = 100n * 10n ** 18n;
 const TOKENBRIDGE_DEPLOYER_TARGET_L2_WEI = 100n * 10n ** 18n;
 const TOKENBRIDGE_DEPLOYER_TARGET_L3_WEI = 10n * 10n ** 18n;
@@ -119,47 +118,6 @@ export function parseTokenBridgeCreatorAddress(output: string): string {
 		throw new Error(`Failed to parse L1TokenBridgeCreator from output: ${output}`);
 	}
 	return creatorAddress;
-}
-
-function composeRunArgs(
-	compose: ComposeContext,
-	service: string,
-	command: string[],
-	options?: {
-		build?: boolean;
-		entrypoint?: string;
-		env?: Record<string, string>;
-	},
-): string[] {
-	const args = ["compose", "-f", compose.composeFile, "-p", compose.projectName, "run"];
-	if (options?.build) {
-		args.push("--build");
-	}
-	args.push("--rm");
-	if (options?.entrypoint) {
-		args.push("--entrypoint", options.entrypoint);
-	}
-	for (const [key, value] of Object.entries(options?.env ?? {})) {
-		args.push("-e", `${key}=${value}`);
-	}
-	args.push(service, ...command);
-	return args;
-}
-
-function runCompose(
-	compose: ComposeContext,
-	service: string,
-	command: string[],
-	options?: {
-		build?: boolean;
-		entrypoint?: string;
-		env?: Record<string, string>;
-		timeoutMs?: number;
-	},
-): string {
-	return execOrThrow("docker", composeRunArgs(compose, service, command, options), {
-		timeout: options?.timeoutMs ?? BRIDGE_DEPLOY_TIMEOUT_MS,
-	});
 }
 
 function runAdminCli(args: string[], timeoutMs = BRIDGE_DEPLOY_TIMEOUT_MS): string {

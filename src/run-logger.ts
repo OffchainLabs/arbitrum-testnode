@@ -232,6 +232,7 @@ export function updateRunStep(step?: string): void {
 		return;
 	}
 	if (step === undefined) {
+		// biome-ignore lint/performance/noDelete: exactOptionalPropertyTypes forbids assigning undefined to optional properties
 		delete activeRunContext.run.currentStep;
 	} else {
 		activeRunContext.run.currentStep = step;
@@ -253,20 +254,24 @@ export function finishActiveRun(
 	const { run, restoreConsole } = activeRunContext;
 	run.status = status;
 	run.finishedAt = nowIso();
+	// biome-ignore lint/performance/noDelete: exactOptionalPropertyTypes forbids assigning undefined to optional properties
 	delete run.currentStep;
 	if (options?.exitCode !== undefined) {
 		run.exitCode = options.exitCode;
 	} else {
+		// biome-ignore lint/performance/noDelete: exactOptionalPropertyTypes forbids assigning undefined to optional properties
 		delete run.exitCode;
 	}
 	if (options?.error !== undefined) {
 		run.error = options.error;
 	} else {
+		// biome-ignore lint/performance/noDelete: exactOptionalPropertyTypes forbids assigning undefined to optional properties
 		delete run.error;
 	}
 	if (options?.failedStep !== undefined) {
 		run.failedStep = options.failedStep;
 	} else {
+		// biome-ignore lint/performance/noDelete: exactOptionalPropertyTypes forbids assigning undefined to optional properties
 		delete run.failedStep;
 	}
 	logRunEvent(
@@ -338,6 +343,7 @@ export function stopCurrentRun(configDir: string): boolean {
 	process.kill(pid, "SIGTERM");
 	run.status = "stopped";
 	run.finishedAt = nowIso();
+	// biome-ignore lint/performance/noDelete: exactOptionalPropertyTypes forbids assigning undefined to optional properties
 	delete run.currentStep;
 	run.lastEvent = {
 		at: nowIso(),

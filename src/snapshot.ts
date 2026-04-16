@@ -110,10 +110,11 @@ function parseDeploymentFile(configDir: string, name: "l2" | "l3"): { rollup: st
 export function readNitroNodeImage(composeFile: string): string {
 	const compose = readFileSync(composeFile, "utf-8");
 	const match = compose.match(/image:\s*(offchainlabs\/nitro-node:[^\s]+)/);
-	if (!match) {
+	const image = match?.[1];
+	if (!image) {
 		throw new Error(`Unable to determine Nitro image from ${composeFile}`);
 	}
-	return match[1]!;
+	return image;
 }
 
 function assertRequiredConfigFiles(configDir: string): void {
@@ -174,6 +175,28 @@ export function loadSnapshotManifest(
 	return JSON.parse(readFileSync(path, "utf-8")) as SnapshotManifest;
 }
 
+function assertSnapshotFilesExist(
+	snapshotDir: string,
+	filenames: readonly string[],
+	errorLabel: string,
+): void {
+	for (const filename of filenames) {
+		const fullPath = join(snapshotDir, filename);
+		if (!existsSync(fullPath)) {
+			throw new Error(`Snapshot missing ${errorLabel}: ${fullPath}`);
+		}
+	}
+}
+
+function assertSnapshotChecksums(snapshotDir: string, checksums: Record<string, string>): void {
+	for (const [filename, checksum] of Object.entries(checksums)) {
+		const fullPath = join(snapshotDir, "config", filename);
+		if (sha256File(fullPath) !== checksum) {
+			throw new Error(`Checksum mismatch for snapshot file ${filename}`);
+		}
+	}
+}
+
 export function verifySnapshotManifest(
 	configDir: string,
 	snapshotId = DEFAULT_SNAPSHOT_ID,
@@ -189,26 +212,9 @@ export function verifySnapshotManifest(
 	}
 
 	const snapshotDir = getSnapshotDir(configDir, snapshotId);
-	for (const filename of manifest.requiredFiles) {
-		const fullPath = join(snapshotDir, filename);
-		if (!existsSync(fullPath)) {
-			throw new Error(`Snapshot missing required file: ${fullPath}`);
-		}
-	}
-
-	for (const archive of manifest.volumeArchives) {
-		const fullPath = join(snapshotDir, archive);
-		if (!existsSync(fullPath)) {
-			throw new Error(`Snapshot missing volume archive: ${fullPath}`);
-		}
-	}
-
-	for (const [filename, checksum] of Object.entries(manifest.configChecksums)) {
-		const fullPath = join(snapshotDir, "config", filename);
-		if (sha256File(fullPath) !== checksum) {
-			throw new Error(`Checksum mismatch for snapshot file ${filename}`);
-		}
-	}
+	assertSnapshotFilesExist(snapshotDir, manifest.requiredFiles, "required file");
+	assertSnapshotFilesExist(snapshotDir, manifest.volumeArchives, "volume archive");
+	assertSnapshotChecksums(snapshotDir, manifest.configChecksums);
 
 	return manifest;
 }
@@ -391,7 +397,7 @@ export async function verifySnapshotSemanticState(
 	const l2Network = localNetworks.l2Network;
 	const l3Network = localNetworks.l3Network;
 	if (!l2Network || !l3Network) {
-		throw new Error(`Snapshot semantic verification requires l2Network and l3Network`);
+		throw new Error("Snapshot semantic verification requires l2Network and l3Network");
 	}
 
 	const checks = [

@@ -83,7 +83,9 @@ async function loadCreateChainModule(): Promise<CreateChainModule> {
 	return { createChain };
 }
 
-export async function deployRollupViaSdk(params: DeployRollupViaSdkParams): Promise<CreateChainResult> {
+export async function deployRollupViaSdk(
+	params: DeployRollupViaSdkParams,
+): Promise<CreateChainResult> {
 	const chainConfig = JSON.parse(readFileSync(params.chainConfigPath, "utf-8")) as Record<
 		string,
 		unknown
@@ -115,7 +117,7 @@ export async function deployRollupViaSdk(params: DeployRollupViaSdkParams): Prom
 
 	const deploymentWithCreator = {
 		...result.deployment,
-		'rollup-creator': result.rollupCreatorAddress,
+		"rollup-creator": result.rollupCreatorAddress,
 	};
 	writeFileSync(params.deploymentOutputPath, JSON.stringify(deploymentWithCreator, null, 2));
 	writeFileSync(params.chainInfoOutputPath, JSON.stringify(result.chainInfo, null, 2));

@@ -122,6 +122,7 @@ export function patchGeneratedL3NodeConfig(
 	const execution = getJsonObject(next, "execution");
 
 	next["ensure-rollup-deployment"] = false;
+	// biome-ignore lint/performance/noDelete: nitro's config loader treats `info-json` as present when the key exists; must remove it, not set to undefined
 	delete chain["info-json"];
 	chain["id"] = 333333;
 	chain["info-files"] = ["/config/l3_chain_info.json"];

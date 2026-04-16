@@ -144,7 +144,7 @@ writeEnv("INTEGRATION_TEST_NITRO_CONTRACTS_BRANCH", state.contractsVersion);
 
 const networkConfigPaths = (process.env["INPUT_NETWORK_CONFIG_PATH"] || "")
 	.split(",")
-	.map(p => p.trim())
+	.map((p) => p.trim())
 	.filter(Boolean);
 for (const dest of networkConfigPaths) {
 	mkdirSync(dirname(dest), { recursive: true });

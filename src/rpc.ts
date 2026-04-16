@@ -30,8 +30,12 @@ const l3Chain = defineChain({
 });
 
 function chainForRpc(rpcUrl: string) {
-	if (rpcUrl.includes(":8547")) return l2Chain;
-	if (rpcUrl.includes(":8549")) return l3Chain;
+	if (rpcUrl.includes(":8547")) {
+		return l2Chain;
+	}
+	if (rpcUrl.includes(":8549")) {
+		return l3Chain;
+	}
 	return l1Chain;
 }
 
@@ -80,6 +84,20 @@ export const validatorWalletAbi = parseAbi([
 ]);
 
 export const gatewayRouterAbi = parseAbi(["function getGateway(address) view returns (address)"]);
+
+export const arbSysAbi = parseAbi([
+	"function withdrawEth(address destination) payable returns (uint256)",
+	"function sendMerkleTreeState() view returns (uint256 size, bytes32 root, bytes32[] partials)",
+	"event L2ToL1Tx(address caller, address indexed destination, uint256 indexed hash, uint256 indexed position, uint256 arbBlockNum, uint256 ethBlockNum, uint256 timestamp, uint256 callvalue, bytes data)",
+]);
+
+export const nodeInterfaceAbi = parseAbi([
+	"function constructOutboxProof(uint64 size, uint64 leaf) view returns (bytes32 send, bytes32 root, bytes32[] proof)",
+]);
+
+export const outboxAbi = parseAbi([
+	"function executeTransaction(bytes32[] proof, uint256 index, address l2Sender, address to, uint256 l2Block, uint256 l1Block, uint256 l2Timestamp, uint256 value, bytes data)",
+]);
 
 export async function getBalanceWei(address: Address, rpcUrl: string): Promise<bigint> {
 	return publicClient(rpcUrl).getBalance({ address });

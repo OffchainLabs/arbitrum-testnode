@@ -13,10 +13,68 @@ vi.mock("../src/exec.js", () => ({
 	execOrThrow: vi.fn(),
 }));
 
+function isTokenBridgeCreatorDeploy(command: string, args: string[]): boolean {
+	return (
+		(command === "docker" || command === "env") && args.includes("deploy:token-bridge-creator")
+	);
+}
+
+const BRIDGE_UI_CONFIG_FIXTURE = {
+	chainName: "orbit-dev-test",
+	parentChainId: 412346,
+	chainId: 333333,
+	rollup: "0x1111111111111111111111111111111111111111",
+	parentChainRpc: "http://127.0.0.1:8547",
+	chainRpc: "http://127.0.0.1:8549",
+	nativeToken: "0x0000000000000000000000000000000000000000",
+	coreContracts: {
+		bridge: "0x3333333333333333333333333333333333333333",
+		inbox: "0x2222222222222222222222222222222222222222",
+		outbox: "0x7777777777777777777777777777777777777777",
+		rollup: "0x1111111111111111111111111111111111111111",
+		sequencerInbox: "0x4444444444444444444444444444444444444444",
+	},
+	tokenBridge: {
+		parentChain: {
+			router: "0xa111111111111111111111111111111111111111",
+			standardGateway: "0xa222222222222222222222222222222222222222",
+			customGateway: "0xa333333333333333333333333333333333333333",
+			wethGateway: "0xa444444444444444444444444444444444444444",
+			weth: "0xa555555555555555555555555555555555555555",
+			multicall: "0xa666666666666666666666666666666666666666",
+			proxyAdmin: "0xa777777777777777777777777777777777777777",
+		},
+		chain: {
+			router: "0xb111111111111111111111111111111111111111",
+			standardGateway: "0xb222222222222222222222222222222222222222",
+			customGateway: "0xb333333333333333333333333333333333333333",
+			wethGateway: "0xb444444444444444444444444444444444444444",
+			weth: "0xb555555555555555555555555555555555555555",
+			multicall: "0xb666666666666666666666666666666666666666",
+			proxyAdmin: "0xb777777777777777777777777777777777777777",
+		},
+	},
+};
+
+function writeBridgeUiConfigAndReturn(args: string[]): string {
+	const outputDirIndex = args.indexOf("--output-dir");
+	const outputDir = args[outputDirIndex + 1];
+	if (!outputDir) {
+		throw new Error("missing --output-dir path");
+	}
+	fs.mkdirSync(outputDir, { recursive: true });
+	fs.writeFileSync(
+		path.join(outputDir, "bridgeUiConfig.json"),
+		JSON.stringify(BRIDGE_UI_CONFIG_FIXTURE),
+	);
+	return JSON.stringify({ ok: true });
+}
+
 vi.mock("../src/rpc.js", () => ({
 	getBalanceWei: vi.fn().mockResolvedValue(0n),
-	readContractOrZero: vi.fn().mockImplementation(
-		(_addr: string, _abi: unknown, functionName: string) => {
+	readContractOrZero: vi
+		.fn()
+		.mockImplementation((_addr: string, _abi: unknown, functionName: string) => {
 			switch (functionName) {
 				case "outbox":
 					return "0x7777777777777777777777777777777777777777";
@@ -27,8 +85,7 @@ vi.mock("../src/rpc.js", () => ({
 				default:
 					return "0x0000000000000000000000000000000000000000";
 			}
-		},
-	),
+		}),
 	publicClient: vi.fn(),
 	walletClient: vi.fn().mockReturnValue({
 		sendTransaction: vi.fn().mockResolvedValue("0x"),
@@ -120,16 +177,19 @@ describe("deployL2L3TokenBridge", () => {
 
 	afterEach(() => {
 		if (previousSdkPath === undefined) {
+			// biome-ignore lint/performance/noDelete: process.env requires delete; assigning undefined stringifies
 			delete process.env["ARBITRUM_SDK_LOCAL_NETWORK_PATH"];
 		} else {
 			process.env["ARBITRUM_SDK_LOCAL_NETWORK_PATH"] = previousSdkPath;
 		}
 		if (previousPortalPath === undefined) {
+			// biome-ignore lint/performance/noDelete: process.env requires delete; assigning undefined stringifies
 			delete process.env["ARBITRUM_PORTAL_LOCAL_NETWORK_PATH"];
 		} else {
 			process.env["ARBITRUM_PORTAL_LOCAL_NETWORK_PATH"] = previousPortalPath;
 		}
 		if (previousAdminCliEntry === undefined) {
+			// biome-ignore lint/performance/noDelete: process.env requires delete; assigning undefined stringifies
 			delete process.env["ARBITRUM_ADMIN_CLI_ENTRY"];
 		} else {
 			process.env["ARBITRUM_ADMIN_CLI_ENTRY"] = previousAdminCliEntry;
@@ -153,62 +213,12 @@ describe("deployL2L3TokenBridge", () => {
 		);
 		const execOrThrow = vi.mocked(execModule.execOrThrow);
 		execOrThrow.mockImplementation((command, args) => {
-			if (
-				(command === "docker" && args.includes("deploy:token-bridge-creator")) ||
-				(command === "env" && args.includes("deploy:token-bridge-creator"))
-			) {
+			if (isTokenBridgeCreatorDeploy(command, args)) {
 				return "L1TokenBridgeCreator: 0x332Fb35767182F8ac9F9C1405db626105F6694E0";
 			}
-
 			if (command === "node" || command.endsWith("/node")) {
-				const outputDirIndex = args.indexOf("--output-dir");
-				const outputDir = args[outputDirIndex + 1];
-				if (!outputDir) {
-					throw new Error("missing --output-dir path");
-				}
-				fs.mkdirSync(outputDir, { recursive: true });
-				fs.writeFileSync(
-					path.join(outputDir, "bridgeUiConfig.json"),
-					JSON.stringify({
-						chainName: "orbit-dev-test",
-						parentChainId: 412346,
-						chainId: 333333,
-						rollup: "0x1111111111111111111111111111111111111111",
-						parentChainRpc: "http://127.0.0.1:8547",
-						chainRpc: "http://127.0.0.1:8549",
-						nativeToken: "0x0000000000000000000000000000000000000000",
-						coreContracts: {
-							bridge: "0x3333333333333333333333333333333333333333",
-							inbox: "0x2222222222222222222222222222222222222222",
-							outbox: "0x7777777777777777777777777777777777777777",
-							rollup: "0x1111111111111111111111111111111111111111",
-							sequencerInbox: "0x4444444444444444444444444444444444444444",
-						},
-						tokenBridge: {
-							parentChain: {
-								router: "0xa111111111111111111111111111111111111111",
-								standardGateway: "0xa222222222222222222222222222222222222222",
-								customGateway: "0xa333333333333333333333333333333333333333",
-								wethGateway: "0xa444444444444444444444444444444444444444",
-								weth: "0xa555555555555555555555555555555555555555",
-								multicall: "0xa666666666666666666666666666666666666666",
-								proxyAdmin: "0xa777777777777777777777777777777777777777",
-							},
-							chain: {
-								router: "0xb111111111111111111111111111111111111111",
-								standardGateway: "0xb222222222222222222222222222222222222222",
-								customGateway: "0xb333333333333333333333333333333333333333",
-								wethGateway: "0xb444444444444444444444444444444444444444",
-								weth: "0xb555555555555555555555555555555555555555",
-								multicall: "0xb666666666666666666666666666666666666666",
-								proxyAdmin: "0xb777777777777777777777777777777777777777",
-							},
-						},
-					}),
-				);
-				return JSON.stringify({ ok: true });
+				return writeBridgeUiConfigAndReturn(args);
 			}
-
 			return "";
 		});
 
