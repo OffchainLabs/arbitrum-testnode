@@ -12,7 +12,6 @@ import { composeRestart, composeUp, waitForRpc } from "../docker.js";
 import { arbitrum, execOrThrow } from "../exec.js";
 import { deployTestErc20 } from "../fee-token.js";
 import { ZERO_ADDRESS } from "../init-helpers.js";
-import { deployRollupViaSdk } from "../sdk-chain.js";
 import { getL3ParentChainFundingPlan } from "../l3-parent-chain-funding.js";
 import { patchGeneratedL2NodeConfig, patchGeneratedL3NodeConfig } from "../node-config-patches.js";
 import {
@@ -32,6 +31,7 @@ import {
 	updateRunStep,
 } from "../run-logger.js";
 import { startAnvilWithState, startNitroFromSnapshot, stopRuntime } from "../runtime.js";
+import { deployRollupViaSdk } from "../sdk-chain.js";
 import { installSnapshotRelease } from "../snapshot-release.js";
 import {
 	DEFAULT_SNAPSHOT_ID,
@@ -73,7 +73,6 @@ const L2_RPC_INTERNAL = "http://sequencer:8547";
 
 const ROLLUPCREATOR_IMAGE = "nitro-testnode-rollupcreator:latest";
 const WASM_MODULE_ROOT = "0x8a7513bf7bb3e3db04b0d982d0e973bcf57bf8b88aef7c6d03dba3a81a56a499";
-const L2_DEPOSIT_VALUE = "100000ether";
 const L2_DEPOSIT_READY_THRESHOLD_WEI = 250n * 10n ** 18n;
 const L3_DEPOSIT_TARGET_WEI = 50n * 10n ** 18n;
 const L3_DEPOSIT_RESERVE_WEI = 1n * 10n ** 18n;
@@ -112,10 +111,6 @@ interface DeploymentJson {
 	"upgrade-executor": string;
 	"stake-token"?: string;
 	"validator-wallet-creator"?: string;
-}
-
-function getErrorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
 }
 
 function setL3StakerEnabled(enabled: boolean): void {
@@ -793,7 +788,10 @@ function makeStepRunners(feeTokenDecimals?: number): Record<string, StepRunner> 
 	};
 }
 
-async function runInitLoop(feeTokenDecimals?: number, rebuild?: boolean): Promise<{
+async function runInitLoop(
+	feeTokenDecimals?: number,
+	rebuild?: boolean,
+): Promise<{
 	success: boolean;
 	failedStep?: string;
 	error?: string;
@@ -866,151 +864,19 @@ export const initCli = Cli.create("init", {
 	}),
 	async run(c) {
 		const { feeTokenDecimals } = c.options;
-		if (
-			feeTokenDecimals !== undefined &&
-			feeTokenDecimals !== 6 &&
-			feeTokenDecimals !== 16 &&
-			feeTokenDecimals !== 18 &&
-			feeTokenDecimals !== 20
-		) {
-			throw new Error("--fee-token-decimals must be 6, 16, 18, or 20");
-		}
-
+		assertValidFeeTokenDecimals(feeTokenDecimals);
 		const snapshotId =
-			feeTokenDecimals !== undefined
-				? `l3-custom-${feeTokenDecimals}`
-				: DEFAULT_SNAPSHOT_ID;
+			feeTokenDecimals !== undefined ? `l3-custom-${feeTokenDecimals}` : DEFAULT_SNAPSHOT_ID;
 
 		if (c.options.background && !c.options.foreground) {
-			const extraArgs = [
-				...(c.options.snapshotVersion
-					? ["--snapshot-version", c.options.snapshotVersion]
-					: []),
-				...(feeTokenDecimals !== undefined
-					? ["--fee-token-decimals", String(feeTokenDecimals)]
-					: []),
-			];
-			const run = startDetachedInitRun(CONFIG_DIR, PROJECT_ROOT, extraArgs);
-			return {
-				success: true,
-				detached: true,
-				runId: run.runId,
-				pid: run.pid,
-				status: run.status,
-				logFile: run.paths.logFile,
-				eventsFile: run.paths.eventsFile,
-			};
+			return startBackgroundInit({
+				snapshotVersion: c.options.snapshotVersion,
+				feeTokenDecimals,
+			});
 		}
 
 		try {
-			const totalStart = Date.now();
-			if (!c.options.rebuild && !hasSnapshot(CONFIG_DIR, snapshotId)) {
-				console.log(
-					`[init] Installing snapshot release ${c.options.snapshotVersion ?? "latest"}...`,
-				);
-				const install = await installSnapshotRelease({
-					composeFile: COMPOSE_FILE,
-					configDir: CONFIG_DIR,
-					...(c.options.snapshotVersion ? { version: c.options.snapshotVersion } : {}),
-				});
-				console.log(
-					`[init] Installed snapshot ${install.releaseTag ?? install.archiveName} from ${install.sourceUrl}`,
-				);
-			}
-			const shouldRestoreSnapshot =
-				!c.options.rebuild && hasSnapshot(CONFIG_DIR, snapshotId);
-
-			if (shouldRestoreSnapshot) {
-				console.log(`[init] Restoring snapshot: ${snapshotId}`);
-				stopRuntime({
-					composeFile: COMPOSE_FILE,
-					projectName: "arbitrum-testnode",
-					configDir: CONFIG_DIR,
-				});
-				restoreSnapshot(CONFIG_DIR, snapshotId);
-				startRunLoggingFromEnv(CONFIG_DIR) ??
-					startInlineRunLogging(
-						CONFIG_DIR,
-						c.options.foreground ? ["init", "--foreground"] : ["init"],
-					);
-				anvilProcess = startAnvilWithState(CONFIG_DIR);
-				await waitForRpc(L1_RPC);
-				await startNitroFromSnapshot(
-					{
-						composeFile: COMPOSE_FILE,
-						projectName: "arbitrum-testnode",
-						configDir: CONFIG_DIR,
-					},
-					{ l1: L1_RPC, l2: L2_RPC, l3: L3_RPC },
-				);
-				await verifySnapshotSemanticState(CONFIG_DIR, {
-					l1: L1_RPC,
-					l2: L2_RPC,
-					l3: L3_RPC,
-				});
-
-				const totalElapsed = Date.now() - totalStart;
-				finishActiveRun("completed", { exitCode: 0 });
-				return {
-					success: true,
-					restoredSnapshot: snapshotId,
-					totalSeconds: totalElapsed / 1000,
-				};
-			}
-
-			startRunLoggingFromEnv(CONFIG_DIR) ??
-				startInlineRunLogging(
-					CONFIG_DIR,
-					c.options.foreground ? ["init", "--foreground"] : ["init"],
-				);
-			const result = await runInitLoop(feeTokenDecimals, c.options.rebuild);
-			const totalElapsed = Date.now() - totalStart;
-
-			if (result.timings) {
-				console.log("\n[init] Timeline:");
-				for (const [step, ms] of Object.entries(result.timings)) {
-					console.log(`  ${step}: ${(ms / 1000).toFixed(1)}s`);
-				}
-				console.log(`  TOTAL: ${(totalElapsed / 1000).toFixed(1)}s`);
-			}
-
-			if (!result.success) {
-				finishActiveRun("failed", {
-					exitCode: 1,
-					...(result.error ? { error: result.error } : {}),
-					...(result.failedStep ? { failedStep: result.failedStep } : {}),
-				});
-				return { success: false, failedStep: result.failedStep, error: result.error };
-			}
-
-			stopRuntime({
-				composeFile: COMPOSE_FILE,
-				projectName: "arbitrum-testnode",
-				configDir: CONFIG_DIR,
-			});
-			const snapshot = captureSnapshot(CONFIG_DIR, COMPOSE_FILE, snapshotId);
-			anvilProcess = startAnvilWithState(CONFIG_DIR);
-			await waitForRpc(L1_RPC);
-			await startNitroFromSnapshot(
-				{
-					composeFile: COMPOSE_FILE,
-					projectName: "arbitrum-testnode",
-					configDir: CONFIG_DIR,
-				},
-				{ l1: L1_RPC, l2: L2_RPC, l3: L3_RPC },
-			);
-			await verifySnapshotSemanticState(CONFIG_DIR, {
-				l1: L1_RPC,
-				l2: L2_RPC,
-				l3: L3_RPC,
-			});
-			finishActiveRun("completed", { exitCode: 0 });
-			return {
-				success: true,
-				stepsCompleted: INIT_STEPS.length,
-				totalSeconds: totalElapsed / 1000,
-				snapshotId: snapshot.snapshotId,
-			};
+			return await runInitForeground(c.options, snapshotId, feeTokenDecimals);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			finishActiveRun("failed", { exitCode: 1, error: message });
@@ -1018,3 +884,159 @@ export const initCli = Cli.create("init", {
 		}
 	},
 });
+
+async function runInitForeground(
+	options: {
+		foreground?: boolean | undefined;
+		rebuild?: boolean | undefined;
+		snapshotVersion?: string | undefined;
+	},
+	snapshotId: string,
+	feeTokenDecimals: number | undefined,
+) {
+	const totalStart = Date.now();
+	await ensureSnapshotInstalledIfNeeded(snapshotId, options.rebuild, options.snapshotVersion);
+	const shouldRestoreSnapshot = !options.rebuild && hasSnapshot(CONFIG_DIR, snapshotId);
+	const logArgs = options.foreground ? ["init", "--foreground"] : ["init"];
+
+	if (shouldRestoreSnapshot) {
+		return runSnapshotRestoreFlow(snapshotId, logArgs, totalStart);
+	}
+
+	startRunLoggingFromEnv(CONFIG_DIR) ?? startInlineRunLogging(CONFIG_DIR, logArgs);
+	const result = await runInitLoop(feeTokenDecimals, options.rebuild);
+	const totalElapsed = Date.now() - totalStart;
+	logInitTimeline(result.timings, totalElapsed);
+
+	if (!result.success) {
+		finishActiveRun("failed", {
+			exitCode: 1,
+			...(result.error ? { error: result.error } : {}),
+			...(result.failedStep ? { failedStep: result.failedStep } : {}),
+		});
+		return { success: false as const, failedStep: result.failedStep, error: result.error };
+	}
+
+	return finalizeFreshInit(snapshotId, totalStart);
+}
+
+function assertValidFeeTokenDecimals(feeTokenDecimals: number | undefined): void {
+	if (
+		feeTokenDecimals !== undefined &&
+		feeTokenDecimals !== 6 &&
+		feeTokenDecimals !== 16 &&
+		feeTokenDecimals !== 18 &&
+		feeTokenDecimals !== 20
+	) {
+		throw new Error("--fee-token-decimals must be 6, 16, 18, or 20");
+	}
+}
+
+function startBackgroundInit(params: {
+	snapshotVersion: string | undefined;
+	feeTokenDecimals: number | undefined;
+}) {
+	const extraArgs = [
+		...(params.snapshotVersion ? ["--snapshot-version", params.snapshotVersion] : []),
+		...(params.feeTokenDecimals !== undefined
+			? ["--fee-token-decimals", String(params.feeTokenDecimals)]
+			: []),
+	];
+	const run = startDetachedInitRun(CONFIG_DIR, PROJECT_ROOT, extraArgs);
+	return {
+		success: true as const,
+		detached: true,
+		runId: run.runId,
+		pid: run.pid,
+		status: run.status,
+		logFile: run.paths.logFile,
+		eventsFile: run.paths.eventsFile,
+	};
+}
+
+async function ensureSnapshotInstalledIfNeeded(
+	snapshotId: string,
+	rebuild: boolean | undefined,
+	snapshotVersion: string | undefined,
+): Promise<void> {
+	if (rebuild || hasSnapshot(CONFIG_DIR, snapshotId)) {
+		return;
+	}
+	console.log(`[init] Installing snapshot release ${snapshotVersion ?? "latest"}...`);
+	const install = await installSnapshotRelease({
+		composeFile: COMPOSE_FILE,
+		configDir: CONFIG_DIR,
+		...(snapshotVersion ? { version: snapshotVersion } : {}),
+	});
+	console.log(
+		`[init] Installed snapshot ${install.releaseTag ?? install.archiveName} from ${install.sourceUrl}`,
+	);
+}
+
+async function runSnapshotRestoreFlow(snapshotId: string, logArgs: string[], totalStart: number) {
+	console.log(`[init] Restoring snapshot: ${snapshotId}`);
+	stopRuntime({
+		composeFile: COMPOSE_FILE,
+		projectName: "arbitrum-testnode",
+		configDir: CONFIG_DIR,
+	});
+	restoreSnapshot(CONFIG_DIR, snapshotId);
+	startRunLoggingFromEnv(CONFIG_DIR) ?? startInlineRunLogging(CONFIG_DIR, logArgs);
+	anvilProcess = startAnvilWithState(CONFIG_DIR);
+	await waitForRpc(L1_RPC);
+	await startNitroFromSnapshot(
+		{
+			composeFile: COMPOSE_FILE,
+			projectName: "arbitrum-testnode",
+			configDir: CONFIG_DIR,
+		},
+		{ l1: L1_RPC, l2: L2_RPC, l3: L3_RPC },
+	);
+	await verifySnapshotSemanticState(CONFIG_DIR, { l1: L1_RPC, l2: L2_RPC, l3: L3_RPC });
+	const totalElapsed = Date.now() - totalStart;
+	finishActiveRun("completed", { exitCode: 0 });
+	return {
+		success: true as const,
+		restoredSnapshot: snapshotId,
+		totalSeconds: totalElapsed / 1000,
+	};
+}
+
+function logInitTimeline(timings: Record<string, number> | undefined, totalElapsed: number): void {
+	if (!timings) {
+		return;
+	}
+	console.log("\n[init] Timeline:");
+	for (const [step, ms] of Object.entries(timings)) {
+		console.log(`  ${step}: ${(ms / 1000).toFixed(1)}s`);
+	}
+	console.log(`  TOTAL: ${(totalElapsed / 1000).toFixed(1)}s`);
+}
+
+async function finalizeFreshInit(snapshotId: string, totalStart: number) {
+	stopRuntime({
+		composeFile: COMPOSE_FILE,
+		projectName: "arbitrum-testnode",
+		configDir: CONFIG_DIR,
+	});
+	const snapshot = captureSnapshot(CONFIG_DIR, COMPOSE_FILE, snapshotId);
+	anvilProcess = startAnvilWithState(CONFIG_DIR);
+	await waitForRpc(L1_RPC);
+	await startNitroFromSnapshot(
+		{
+			composeFile: COMPOSE_FILE,
+			projectName: "arbitrum-testnode",
+			configDir: CONFIG_DIR,
+		},
+		{ l1: L1_RPC, l2: L2_RPC, l3: L3_RPC },
+	);
+	await verifySnapshotSemanticState(CONFIG_DIR, { l1: L1_RPC, l2: L2_RPC, l3: L3_RPC });
+	const totalElapsed = Date.now() - totalStart;
+	finishActiveRun("completed", { exitCode: 0 });
+	return {
+		success: true as const,
+		stepsCompleted: INIT_STEPS.length,
+		totalSeconds: totalElapsed / 1000,
+		snapshotId: snapshot.snapshotId,
+	};
+}

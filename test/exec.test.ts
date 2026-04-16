@@ -38,4 +38,3 @@ describe("arbitrum", () => {
 		expect(stdout).toContain("0.1.0");
 	});
 });
-
