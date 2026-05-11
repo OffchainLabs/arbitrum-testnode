@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arbitrum, exec, execOrThrow } from "../src/exec.js";
+import { exec, execOrThrow } from "../src/exec.js";
 
 describe("exec", () => {
 	it("runs a command and captures stdout", () => {
@@ -28,13 +28,5 @@ describe("execOrThrow", () => {
 
 	it("throws on non-zero exit", () => {
 		expect(() => execOrThrow("sh", ["-c", "echo fail >&2; exit 1"])).toThrow("sh failed");
-	});
-});
-
-describe("arbitrum", () => {
-	it("calls exec with 'arbitrum' as the command", () => {
-		// arbitrum --version returns version string
-		const stdout = arbitrum(["--version"]);
-		expect(stdout).toContain("0.1.0");
 	});
 });

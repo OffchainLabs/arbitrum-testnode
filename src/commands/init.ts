@@ -9,7 +9,7 @@ import { accounts } from "../accounts.js";
 import { writeChainConfig } from "../chain-config.js";
 import { clampDepositAmount } from "../deposit-amount.js";
 import { composeRestart, composeUp, waitForRpc } from "../docker.js";
-import { arbitrum, execOrThrow } from "../exec.js";
+import { execOrThrow } from "../exec.js";
 import { deployTestErc20 } from "../fee-token.js";
 import { ZERO_ADDRESS } from "../init-helpers.js";
 import { getL3ParentChainFundingPlan } from "../l3-parent-chain-funding.js";
@@ -31,7 +31,7 @@ import {
 	updateRunStep,
 } from "../run-logger.js";
 import { startAnvilWithState, startNitroFromSnapshot, stopRuntime } from "../runtime.js";
-import { deployRollupViaSdk } from "../sdk-chain.js";
+import { deployRollupViaSdk, prepareNodeConfigFromDeployment } from "../sdk-chain.js";
 import { installSnapshotRelease } from "../snapshot-release.js";
 import {
 	DEFAULT_SNAPSHOT_ID,
@@ -361,6 +361,10 @@ function readDeployment(name: string): DeploymentJson {
 	return JSON.parse(raw) as DeploymentJson;
 }
 
+function readJsonFile<T>(name: string): T {
+	return JSON.parse(readFileSync(resolve(CONFIG_DIR, name), "utf-8")) as T;
+}
+
 function createL1Steps(): Record<string, StepRunner> {
 	return {
 		"start-l1": async (state) => {
@@ -414,31 +418,17 @@ function createL2DeploySteps(): Record<string, StepRunner> {
 			if (!rollupData) {
 				throw new Error("Missing l2 rollup deployment data");
 			}
-			arbitrum(
-				[
-					"deploy",
-					"generate-config",
-					"--rollup",
-					rollupData["rollup"] as string,
-					"--chain-name",
-					"arb-dev-test",
-					"--parent-rpc",
-					L1_RPC,
-					"--parent-chain-id",
-					"1337",
-					"--parent-beacon-rpc",
-					"http://localhost:5555",
-					"--batch-poster-key",
-					accounts.sequencer.privateKey,
-					"--validator-key",
-					accounts.validator.privateKey,
-					"--output-dir",
-					CONFIG_DIR,
-					"--type",
-					"node",
-				],
-				{ timeout: 60_000 },
-			);
+			const nodeConfig = prepareNodeConfigFromDeployment({
+				chainName: "arb-dev-test",
+				chainConfig: readJsonFile("l2_chain_config.json"),
+				deployment: readJsonFile("l2_deployment.json"),
+				parentChainId: 1337,
+				parentChainRpcUrl: L1_RPC,
+				parentChainBeaconRpcUrl: "http://localhost:5555",
+				batchPosterPrivateKey: accounts.sequencer.privateKey,
+				validatorPrivateKey: accounts.validator.privateKey,
+			});
+			writeFileSync(resolve(CONFIG_DIR, "nodeConfig.json"), JSON.stringify(nodeConfig, null, 2));
 			// Patch parent RPC URL for Docker networking
 			patchConfigUrl(resolve(CONFIG_DIR, "nodeConfig.json"), L1_RPC, L1_RPC_DOCKER);
 			const src = resolve(CONFIG_DIR, "nodeConfig.json");
@@ -596,7 +586,6 @@ function createL3Steps(feeTokenDecimals?: number): Record<string, StepRunner> {
 			}
 
 			await deployRollupViaSdk({
-				configDir: CONFIG_DIR,
 				chainConfigPath: resolve(CONFIG_DIR, "l3_chain_config.json"),
 				chainId: 333333,
 				chainName: "orbit-dev-test",
@@ -636,29 +625,16 @@ function createL3Steps(feeTokenDecimals?: number): Record<string, StepRunner> {
 			if (!rollupData) {
 				throw new Error("Missing l3 rollup deployment data");
 			}
-			arbitrum(
-				[
-					"deploy",
-					"generate-config",
-					"--rollup",
-					rollupData["rollup"] as string,
-					"--chain-name",
-					"orbit-dev-test",
-					"--parent-rpc",
-					L2_RPC,
-					"--parent-chain-id",
-					"412346",
-					"--batch-poster-key",
-					accounts.l3sequencer.privateKey,
-					"--validator-key",
-					accounts.l3owner.privateKey,
-					"--output-dir",
-					CONFIG_DIR,
-					"--type",
-					"node",
-				],
-				{ timeout: 60_000 },
-			);
+			const nodeConfig = prepareNodeConfigFromDeployment({
+				chainName: "orbit-dev-test",
+				chainConfig: readJsonFile("l3_chain_config.json"),
+				deployment: readJsonFile("l3_deployment.json"),
+				parentChainId: 412346,
+				parentChainRpcUrl: L2_RPC,
+				batchPosterPrivateKey: accounts.l3sequencer.privateKey,
+				validatorPrivateKey: accounts.l3owner.privateKey,
+			});
+			writeFileSync(resolve(CONFIG_DIR, "nodeConfig.json"), JSON.stringify(nodeConfig, null, 2));
 			patchConfigUrl(resolve(CONFIG_DIR, "nodeConfig.json"), L2_RPC, L2_RPC_DOCKER);
 			const src = resolve(CONFIG_DIR, "nodeConfig.json");
 			const dest = resolve(CONFIG_DIR, "l3-nodeConfig.json");
