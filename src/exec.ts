@@ -68,11 +68,6 @@ export function execOrThrow(
 	return result.stdout;
 }
 
-/** Run an `arbitrum` CLI command. Throws on failure. */
-export function arbitrum(args: string[], options?: { cwd?: string; timeout?: number }): string {
-	return execOrThrow("arbitrum", args, options);
-}
-
 /** Run an `anvil` command (non-blocking not supported here — use spawn separately). */
 export function anvil(args: string[]): ExecResult {
 	return exec("anvil", args);

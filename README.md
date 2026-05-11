@@ -130,7 +130,6 @@ pnpm validate             # Full validation (lint + build + typecheck + test)
 
 - [Anvil](https://book.getfoundry.sh/anvil/) (Foundry) for L1
 - [Nitro](https://github.com/OffchainLabs/nitro) node Docker images for L2/L3
-- `arbitrum` CLI for rollup deployment and config generation
 - Docker for running Nitro nodes
 
 ## License

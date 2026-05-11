@@ -1,13 +1,15 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { readFileSync, writeFileSync } from "node:fs";
+import {
+	type NodeConfig,
+	type PrepareNodeConfigParams,
+	createRollup,
+	createRollupPrepareDeploymentParamsConfig,
+	prepareNodeConfig,
+} from "@arbitrum/chain-sdk";
 import type { Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { ZERO_ADDRESS } from "./init-helpers.js";
 import { publicClient } from "./rpc.js";
-
-interface CreateChainModule {
-	createChain: (params: Record<string, unknown>) => Promise<CreateChainResult>;
-}
 
 export interface CreateChainDeployment {
 	bridge: Address;
@@ -22,15 +24,7 @@ export interface CreateChainDeployment {
 	"stake-token"?: Address;
 }
 
-export interface CreateChainResult {
-	deployment: CreateChainDeployment;
-	chainInfo: Array<Record<string, unknown>>;
-	nodeConfig: Record<string, unknown>;
-	rollupCreatorAddress: Address;
-}
-
 export interface DeployRollupViaSdkParams {
-	configDir: string;
 	chainConfigPath: string;
 	chainId: number;
 	chainName: string;
@@ -53,75 +47,131 @@ export interface DeployRollupViaSdkParams {
 	feeTokenPricer?: Address;
 }
 
-function getChainSdkEntryPath(): string {
-	const override = process.env["ARBITRUM_CHAIN_SDK_ENTRY"];
-	if (override) {
-		return override;
-	}
+type DeploymentForNodeConfig = Partial<CreateChainDeployment> &
+	Pick<CreateChainDeployment, "rollup" | "bridge" | "inbox" | "sequencer-inbox">;
 
-	return resolve(import.meta.dirname, "../../arbitrum-chain-sdk/src/dist/index.js");
+export function prepareNodeConfigFromDeployment(input: {
+	chainName: string;
+	chainConfig: Record<string, unknown> & { chainId: number };
+	deployment: DeploymentForNodeConfig;
+	parentChainId: 1337 | 412346;
+	parentChainIsArbitrum?: boolean;
+	parentChainRpcUrl: string;
+	parentChainBeaconRpcUrl?: string;
+	batchPosterPrivateKey: string;
+	validatorPrivateKey: string;
+	dasServerUrl?: string;
+}) {
+	return prepareNodeConfig({
+		chainName: input.chainName,
+		chainConfig: input.chainConfig as PrepareNodeConfigParams["chainConfig"],
+		coreContracts: {
+			rollup: input.deployment.rollup,
+			bridge: input.deployment.bridge,
+			inbox: input.deployment.inbox,
+			sequencerInbox: input.deployment["sequencer-inbox"],
+			validatorUtils: input.deployment["validator-utils"],
+			validatorWalletCreator: input.deployment["validator-wallet-creator"] ?? ZERO_ADDRESS,
+			nativeToken: input.deployment["native-token"] ?? ZERO_ADDRESS,
+			deployedAtBlockNumber: input.deployment["deployed-at"] ?? 0,
+		} as PrepareNodeConfigParams["coreContracts"],
+		batchPosterPrivateKey: input.batchPosterPrivateKey,
+		validatorPrivateKey: input.validatorPrivateKey,
+		stakeToken: input.deployment["stake-token"] ?? ZERO_ADDRESS,
+		parentChainId: input.parentChainId,
+		...(input.parentChainIsArbitrum !== undefined
+			? { parentChainIsArbitrum: input.parentChainIsArbitrum }
+			: {}),
+		parentChainRpcUrl: input.parentChainRpcUrl,
+		...(input.parentChainBeaconRpcUrl
+			? { parentChainBeaconRpcUrl: input.parentChainBeaconRpcUrl }
+			: {}),
+		...(input.dasServerUrl ? { dasServerUrl: input.dasServerUrl } : {}),
+	});
 }
 
-async function loadCreateChainModule(): Promise<CreateChainModule> {
-	const entryPath = getChainSdkEntryPath();
-	if (!existsSync(entryPath)) {
-		throw new Error(
-			`Chain SDK build not found at ${entryPath}. Build ../arbitrum-chain-sdk first or set ARBITRUM_CHAIN_SDK_ENTRY.`,
-		);
-	}
-
-	const moduleUrl = pathToFileURL(entryPath).href;
-	const loaded = (await import(moduleUrl)) as {
-		createChain?: CreateChainModule["createChain"];
-		default?: { createChain?: CreateChainModule["createChain"] };
-	};
-	const createChain = loaded.createChain ?? loaded.default?.createChain;
-	if (!createChain) {
-		throw new Error(`createChain export not found in ${entryPath}`);
-	}
-
-	return { createChain };
-}
-
-export async function deployRollupViaSdk(
-	params: DeployRollupViaSdkParams,
-): Promise<CreateChainResult> {
+export async function deployRollupViaSdk(params: DeployRollupViaSdkParams): Promise<void> {
 	const chainConfig = JSON.parse(readFileSync(params.chainConfigPath, "utf-8")) as Record<
 		string,
 		unknown
 	>;
 	const account = privateKeyToAccount(params.ownerKey);
-	const { createChain } = await loadCreateChainModule();
-
-	const result = await createChain({
-		account,
-		parentChainPublicClient: publicClient(params.parentRpcUrl),
-		chainId: params.chainId,
-		chainName: params.chainName,
+	const parentChainPublicClient = publicClient(params.parentRpcUrl);
+	const deploymentConfig = createRollupPrepareDeploymentParamsConfig(parentChainPublicClient, {
+		chainId: BigInt(params.chainId),
 		owner: params.ownerAddress,
-		batchPoster: params.batchPosterAddress,
-		batchPosterPrivateKey: params.batchPosterKey,
-		validator: params.validatorAddress,
-		validatorPrivateKey: params.validatorKey,
-		parentChainId: params.parentChainId,
-		parentChainIsArbitrum: params.parentChainIsArbitrum,
-		parentChainRpcUrl: params.parentRpcUrl,
-		...(params.parentBeaconRpcUrl ? { parentChainBeaconRpcUrl: params.parentBeaconRpcUrl } : {}),
-		chainConfig,
-		maxDataSize: params.maxDataSize,
+		chainConfig: chainConfig as PrepareNodeConfigParams["chainConfig"],
 		wasmModuleRoot: params.wasmModuleRoot,
-		// omit stakeToken — createChain defaults to WETH for non-custom chains
-		...(params.nativeToken ? { nativeToken: params.nativeToken } : {}),
 		...(params.feeTokenPricer ? { feeTokenPricer: params.feeTokenPricer } : {}),
 	});
 
+	const result = await createRollup({
+		params: {
+			config: deploymentConfig,
+			batchPosters: [params.batchPosterAddress],
+			validators: [params.validatorAddress],
+			maxDataSize: Number(params.maxDataSize),
+			...(params.nativeToken ? { nativeToken: params.nativeToken } : {}),
+		},
+		account,
+		parentChainPublicClient,
+	});
+
+	const stakeToken =
+		((deploymentConfig as { stakeToken?: Address }).stakeToken as Address | undefined) ??
+		ZERO_ADDRESS;
+	const deployment: CreateChainDeployment = {
+		bridge: result.coreContracts.bridge,
+		inbox: result.coreContracts.inbox,
+		"sequencer-inbox": result.coreContracts.sequencerInbox,
+		"deployed-at": result.coreContracts.deployedAtBlockNumber,
+		rollup: result.coreContracts.rollup,
+		"native-token": result.coreContracts.nativeToken,
+		"upgrade-executor": result.coreContracts.upgradeExecutor,
+		...(result.coreContracts.validatorUtils
+			? { "validator-utils": result.coreContracts.validatorUtils }
+			: {}),
+		"validator-wallet-creator": result.coreContracts.validatorWalletCreator,
+		"stake-token": stakeToken,
+	};
+	const nodeConfig: NodeConfig = prepareNodeConfig({
+		chainName: params.chainName,
+		chainConfig: chainConfig as PrepareNodeConfigParams["chainConfig"],
+		coreContracts: result.coreContracts,
+		batchPosterPrivateKey: params.batchPosterKey,
+		validatorPrivateKey: params.validatorKey,
+		stakeToken,
+		parentChainId: params.parentChainId as PrepareNodeConfigParams["parentChainId"],
+		parentChainIsArbitrum: params.parentChainIsArbitrum,
+		parentChainRpcUrl: params.parentRpcUrl,
+		...(params.parentBeaconRpcUrl ? { parentChainBeaconRpcUrl: params.parentBeaconRpcUrl } : {}),
+	});
 	const deploymentWithCreator = {
-		...result.deployment,
-		"rollup-creator": result.rollupCreatorAddress,
+		...deployment,
+		"rollup-creator": result.transaction.to ?? ZERO_ADDRESS,
 	};
 	writeFileSync(params.deploymentOutputPath, JSON.stringify(deploymentWithCreator, null, 2));
-	writeFileSync(params.chainInfoOutputPath, JSON.stringify(result.chainInfo, null, 2));
-	writeFileSync(params.rawNodeConfigOutputPath, JSON.stringify(result.nodeConfig, null, 2));
-
-	return result;
+	writeFileSync(
+		params.chainInfoOutputPath,
+		JSON.stringify(
+			[
+				{
+					"chain-name": params.chainName,
+					"parent-chain-id": params.parentChainId,
+					"parent-chain-is-arbitrum": params.parentChainIsArbitrum,
+					"sequencer-url": "",
+					"secondary-forwarding-target": "",
+					"feed-url": "",
+					"secondary-feed-url": "",
+					"das-index-url": "",
+					"has-genesis-state": false,
+					"chain-config": chainConfig,
+					rollup: deployment,
+				},
+			],
+			null,
+			2,
+		),
+	);
+	writeFileSync(params.rawNodeConfigOutputPath, JSON.stringify(nodeConfig, null, 2));
 }
