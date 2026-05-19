@@ -57,7 +57,7 @@ snapshotCli.command("build", {
 	options: snapshotOptions,
 	async run(c) {
 		const snapshotId = c.options.id ?? DEFAULT_SNAPSHOT_ID;
-		verifySnapshotSemanticState(CONFIG_DIR, RPCS);
+		await verifySnapshotSemanticState(CONFIG_DIR, RPCS);
 		stopRuntime({
 			composeFile: COMPOSE_FILE,
 			projectName: "arbitrum-testnode",
@@ -74,7 +74,7 @@ snapshotCli.command("build", {
 			},
 			RPCS,
 		);
-		verifySnapshotSemanticState(CONFIG_DIR, RPCS);
+		await verifySnapshotSemanticState(CONFIG_DIR, RPCS);
 		return {
 			success: true,
 			snapshotId,
@@ -104,7 +104,7 @@ snapshotCli.command("restore", {
 			},
 			RPCS,
 		);
-		verifySnapshotSemanticState(CONFIG_DIR, RPCS);
+		await verifySnapshotSemanticState(CONFIG_DIR, RPCS);
 		return {
 			success: true,
 			snapshotId,
@@ -124,7 +124,7 @@ snapshotCli.command("verify", {
 			await waitForRpc(RPCS.l1, 1_000, 100);
 			await waitForRpc(RPCS.l2, 1_000, 100);
 			await waitForRpc(RPCS.l3, 1_000, 100);
-			verifySnapshotSemanticState(CONFIG_DIR, RPCS);
+			await verifySnapshotSemanticState(CONFIG_DIR, RPCS);
 			semanticState = "verified";
 		} catch {
 			semanticState = "skipped";

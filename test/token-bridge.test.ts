@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { createTokenBridge, createTokenBridgeFetchTokenBridgeContracts } from "@arbitrum/chain-sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as execModule from "../src/exec.js";
 import {
@@ -8,6 +9,37 @@ import {
 	getL2ChildWeth,
 	parseTokenBridgeCreatorAddress,
 } from "../src/token-bridge.js";
+
+const mocks = vi.hoisted(() => ({
+	createTokenBridge: vi.fn(),
+	createTokenBridgeFetchTokenBridgeContracts: vi.fn(),
+	tokenBridgeContracts: {
+		parentChainContracts: {
+			router: "0xa111111111111111111111111111111111111111",
+			standardGateway: "0xa222222222222222222222222222222222222222",
+			customGateway: "0xa333333333333333333333333333333333333333",
+			wethGateway: "0xa444444444444444444444444444444444444444",
+			weth: "0xa555555555555555555555555555555555555555",
+			multicall: "0xa666666666666666666666666666666666666666",
+		},
+		orbitChainContracts: {
+			router: "0xb111111111111111111111111111111111111111",
+			standardGateway: "0xb222222222222222222222222222222222222222",
+			customGateway: "0xb333333333333333333333333333333333333333",
+			wethGateway: "0xb444444444444444444444444444444444444444",
+			weth: "0xb555555555555555555555555555555555555555",
+			multicall: "0xb666666666666666666666666666666666666666",
+			proxyAdmin: "0xb777777777777777777777777777777777777777",
+			beaconProxyFactory: "0xb888888888888888888888888888888888888888",
+			upgradeExecutor: "0xb999999999999999999999999999999999999999",
+		},
+	},
+}));
+
+vi.mock("@arbitrum/chain-sdk", () => ({
+	createTokenBridge: mocks.createTokenBridge,
+	createTokenBridgeFetchTokenBridgeContracts: mocks.createTokenBridgeFetchTokenBridgeContracts,
+}));
 
 vi.mock("../src/exec.js", () => ({
 	execOrThrow: vi.fn(),
@@ -17,57 +49,6 @@ function isTokenBridgeCreatorDeploy(command: string, args: string[]): boolean {
 	return (
 		(command === "docker" || command === "env") && args.includes("deploy:token-bridge-creator")
 	);
-}
-
-const BRIDGE_UI_CONFIG_FIXTURE = {
-	chainName: "orbit-dev-test",
-	parentChainId: 412346,
-	chainId: 333333,
-	rollup: "0x1111111111111111111111111111111111111111",
-	parentChainRpc: "http://127.0.0.1:8547",
-	chainRpc: "http://127.0.0.1:8549",
-	nativeToken: "0x0000000000000000000000000000000000000000",
-	coreContracts: {
-		bridge: "0x3333333333333333333333333333333333333333",
-		inbox: "0x2222222222222222222222222222222222222222",
-		outbox: "0x7777777777777777777777777777777777777777",
-		rollup: "0x1111111111111111111111111111111111111111",
-		sequencerInbox: "0x4444444444444444444444444444444444444444",
-	},
-	tokenBridge: {
-		parentChain: {
-			router: "0xa111111111111111111111111111111111111111",
-			standardGateway: "0xa222222222222222222222222222222222222222",
-			customGateway: "0xa333333333333333333333333333333333333333",
-			wethGateway: "0xa444444444444444444444444444444444444444",
-			weth: "0xa555555555555555555555555555555555555555",
-			multicall: "0xa666666666666666666666666666666666666666",
-			proxyAdmin: "0xa777777777777777777777777777777777777777",
-		},
-		chain: {
-			router: "0xb111111111111111111111111111111111111111",
-			standardGateway: "0xb222222222222222222222222222222222222222",
-			customGateway: "0xb333333333333333333333333333333333333333",
-			wethGateway: "0xb444444444444444444444444444444444444444",
-			weth: "0xb555555555555555555555555555555555555555",
-			multicall: "0xb666666666666666666666666666666666666666",
-			proxyAdmin: "0xb777777777777777777777777777777777777777",
-		},
-	},
-};
-
-function writeBridgeUiConfigAndReturn(args: string[]): string {
-	const outputDirIndex = args.indexOf("--output-dir");
-	const outputDir = args[outputDirIndex + 1];
-	if (!outputDir) {
-		throw new Error("missing --output-dir path");
-	}
-	fs.mkdirSync(outputDir, { recursive: true });
-	fs.writeFileSync(
-		path.join(outputDir, "bridgeUiConfig.json"),
-		JSON.stringify(BRIDGE_UI_CONFIG_FIXTURE),
-	);
-	return JSON.stringify({ ok: true });
 }
 
 vi.mock("../src/rpc.js", () => ({
@@ -86,7 +67,12 @@ vi.mock("../src/rpc.js", () => ({
 					return "0x0000000000000000000000000000000000000000";
 			}
 		}),
-	publicClient: vi.fn(),
+	publicClient: vi.fn((rpcUrl: string) => ({
+		rpcUrl,
+		chain: {
+			id: rpcUrl.includes(":8549") ? 333333 : rpcUrl.includes(":8547") ? 412346 : 1337,
+		},
+	})),
 	walletClient: vi.fn().mockReturnValue({
 		sendTransaction: vi.fn().mockResolvedValue("0x"),
 		writeContract: vi.fn().mockResolvedValue("0x"),
@@ -159,20 +145,20 @@ describe("deployL2L3TokenBridge", () => {
 	let previousSdkPath: string | undefined;
 	let previousPortalPath: string | undefined;
 
-	let previousAdminCliEntry: string | undefined;
-
 	beforeEach(() => {
 		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "token-bridge-test-"));
 		vi.clearAllMocks();
+		mocks.createTokenBridge.mockResolvedValue({
+			tokenBridgeContracts: mocks.tokenBridgeContracts,
+		});
+		mocks.createTokenBridgeFetchTokenBridgeContracts.mockResolvedValue(mocks.tokenBridgeContracts);
 		previousSdkPath = process.env["ARBITRUM_SDK_LOCAL_NETWORK_PATH"];
 		previousPortalPath = process.env["ARBITRUM_PORTAL_LOCAL_NETWORK_PATH"];
-		previousAdminCliEntry = process.env["ARBITRUM_ADMIN_CLI_ENTRY"];
 		process.env["ARBITRUM_SDK_LOCAL_NETWORK_PATH"] = path.join(tmpDir, "sdk-localNetwork.json");
 		process.env["ARBITRUM_PORTAL_LOCAL_NETWORK_PATH"] = path.join(
 			tmpDir,
 			"portal-localNetwork.json",
 		);
-		process.env["ARBITRUM_ADMIN_CLI_ENTRY"] = "/test/admin-cli/dist/index.cjs";
 	});
 
 	afterEach(() => {
@@ -187,12 +173,6 @@ describe("deployL2L3TokenBridge", () => {
 			delete process.env["ARBITRUM_PORTAL_LOCAL_NETWORK_PATH"];
 		} else {
 			process.env["ARBITRUM_PORTAL_LOCAL_NETWORK_PATH"] = previousPortalPath;
-		}
-		if (previousAdminCliEntry === undefined) {
-			// biome-ignore lint/performance/noDelete: process.env requires delete; assigning undefined stringifies
-			delete process.env["ARBITRUM_ADMIN_CLI_ENTRY"];
-		} else {
-			process.env["ARBITRUM_ADMIN_CLI_ENTRY"] = previousAdminCliEntry;
 		}
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 	});
@@ -215,9 +195,6 @@ describe("deployL2L3TokenBridge", () => {
 		execOrThrow.mockImplementation((command, args) => {
 			if (isTokenBridgeCreatorDeploy(command, args)) {
 				return "L1TokenBridgeCreator: 0x332Fb35767182F8ac9F9C1405db626105F6694E0";
-			}
-			if (command === "node" || command.endsWith("/node")) {
-				return writeBridgeUiConfigAndReturn(args);
 			}
 			return "";
 		});
@@ -251,21 +228,47 @@ describe("deployL2L3TokenBridge", () => {
 				cwd: expect.any(String),
 			}),
 		);
-		expect(execOrThrow).toHaveBeenCalledWith(
+		expect(execOrThrow).not.toHaveBeenCalledWith(
 			expect.stringMatching(/(?:^node$|\/node$)/),
-			expect.arrayContaining([
-				"/test/admin-cli/dist/index.cjs",
-				"deploy",
-				"child",
-				"--config",
-				path.join(tmpDir, "l2-l3-chain-config.json"),
-				"--private-key",
-				"0x2222222222222222222222222222222222222222222222222222222222222222",
-				"--yes",
-				"--output-dir",
-				path.join(tmpDir, "l2-l3-admin"),
-			]),
 			expect.anything(),
+			expect.anything(),
+		);
+		expect(createTokenBridge).toHaveBeenCalledWith(
+			expect.objectContaining({
+				rollupAddress: "0x1111111111111111111111111111111111111111",
+				rollupDeploymentBlockNumber: 44n,
+				tokenBridgeCreatorAddressOverride: "0x332Fb35767182F8ac9F9C1405db626105F6694E0",
+				parentChainPublicClient: expect.objectContaining({
+					rpcUrl: "http://127.0.0.1:8547",
+				}),
+				orbitChainPublicClient: expect.objectContaining({
+					rpcUrl: "http://127.0.0.1:8549",
+				}),
+				gasOverrides: {
+					gasLimit: {
+						base: 6_000_000n,
+					},
+				},
+				retryableGasOverrides: {
+					maxGasForFactory: {
+						base: 20_000_000n,
+					},
+					maxGasForContracts: {
+						base: 20_000_000n,
+					},
+					maxSubmissionCostForFactory: {
+						base: 4_000_000_000_000n,
+					},
+					maxSubmissionCostForContracts: {
+						base: 4_000_000_000_000n,
+					},
+				},
+				setWethGatewayGasOverrides: {
+					gasLimit: {
+						base: 100_000n,
+					},
+				},
+			}),
 		);
 
 		const l2l3Network = JSON.parse(
@@ -341,6 +344,76 @@ describe("deployL2L3TokenBridge", () => {
 		);
 		expect(spec.parentDeployment.challengeManager).toBe(
 			"0x9999999999999999999999999999999999999999",
+		);
+	});
+
+	it("loads existing token bridge contracts when the SDK retry reports an existing deployment", async () => {
+		fs.writeFileSync(
+			path.join(tmpDir, "l3_deployment.json"),
+			JSON.stringify({
+				rollup: "0x1111111111111111111111111111111111111111",
+				inbox: "0x2222222222222222222222222222222222222222",
+				bridge: "0x3333333333333333333333333333333333333333",
+				"sequencer-inbox": "0x4444444444444444444444444444444444444444",
+				"upgrade-executor": "0x5555555555555555555555555555555555555555",
+				"validator-wallet-creator": "0x6666666666666666666666666666666666666666",
+				"native-token": "0x0000000000000000000000000000000000000000",
+				"deployed-at": 44,
+			}),
+		);
+		const execOrThrow = vi.mocked(execModule.execOrThrow);
+		execOrThrow.mockImplementation((command, args) => {
+			if (isTokenBridgeCreatorDeploy(command, args)) {
+				return "L1TokenBridgeCreator: 0x332Fb35767182F8ac9F9C1405db626105F6694E0";
+			}
+			return "";
+		});
+		mocks.createTokenBridge
+			.mockRejectedValueOnce(new Error("Unexpected status for retryable ticket: 0xabc"))
+			.mockRejectedValueOnce(
+				new Error(
+					"Token bridge contracts for Rollup 0x1111111111111111111111111111111111111111 are already deployed",
+				),
+			);
+
+		await deployL2L3TokenBridge({
+			compose: {
+				composeFile: "/tmp/docker-compose.yaml",
+				projectName: "arbitrum-testnode",
+			},
+			configDir: tmpDir,
+			rollupAddress: "0x1111111111111111111111111111111111111111",
+			rollupOwnerKey: "0x2222222222222222222222222222222222222222222222222222222222222222",
+			parentRpc: "http://sequencer:8547",
+			childRpc: "http://l3node:8547",
+			parentKey: "0x3333333333333333333333333333333333333333333333333333333333333333",
+			childKey: "0x3333333333333333333333333333333333333333333333333333333333333333",
+			parentWethOverride: "0x5555555555555555555555555555555555555555",
+		});
+
+		expect(createTokenBridge).toHaveBeenCalledTimes(2);
+		expect(createTokenBridgeFetchTokenBridgeContracts).toHaveBeenCalledWith({
+			inbox: "0x2222222222222222222222222222222222222222",
+			parentChainPublicClient: expect.objectContaining({
+				rpcUrl: "http://127.0.0.1:8547",
+			}),
+			tokenBridgeCreatorAddressOverride: "0x332Fb35767182F8ac9F9C1405db626105F6694E0",
+		});
+		const l2l3Network = JSON.parse(
+			fs.readFileSync(path.join(tmpDir, "l2l3_network.json"), "utf-8"),
+		) as {
+			l3Network: {
+				tokenBridge: {
+					parentGatewayRouter: string;
+					childGatewayRouter: string;
+				};
+			};
+		};
+		expect(l2l3Network.l3Network.tokenBridge.parentGatewayRouter).toBe(
+			"0xa111111111111111111111111111111111111111",
+		);
+		expect(l2l3Network.l3Network.tokenBridge.childGatewayRouter).toBe(
+			"0xb111111111111111111111111111111111111111",
 		);
 	});
 });

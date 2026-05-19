@@ -1,9 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { createTokenBridge, createTokenBridgeFetchTokenBridgeContracts } from "@arbitrum/chain-sdk";
 import type { Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { accounts } from "./accounts.js";
 import {
+	type BridgeUiConfigFile,
 	ZERO_ADDRESS,
 	createChainSpec,
 	createParentDeployment,
@@ -19,27 +21,13 @@ import { execOrThrow } from "./exec.js";
 import {
 	arbOwnerAbi,
 	getBalanceWei as getBalanceWeiRpc,
+	publicClient,
 	readContractOrZero,
 	rollupAbi,
 	walletClient,
 } from "./rpc.js";
 
 const ARB_OWNER = "0x0000000000000000000000000000000000000070" as const;
-function getAdminCliEntry(): string {
-	const entry = process.env["ARBITRUM_ADMIN_CLI_ENTRY"];
-	if (!entry) {
-		throw new Error("ARBITRUM_ADMIN_CLI_ENTRY env var is required");
-	}
-	return entry;
-}
-const ADMIN_CLI_NODE_BIN = (() => {
-	if (process.env["ARBITRUM_ADMIN_NODE_BIN"]) {
-		return process.env["ARBITRUM_ADMIN_NODE_BIN"];
-	}
-	const node20Path = `${process.env["HOME"] ?? ""}/.nvm/versions/node/v20.19.0/bin/node`;
-	return existsSync(node20Path) ? node20Path : "node";
-})();
-const NODE20_BIN_DIR = ADMIN_CLI_NODE_BIN === "node" ? null : dirname(ADMIN_CLI_NODE_BIN);
 const LOCAL_TOKEN_BRIDGE_DIR =
 	process.env["TOKEN_BRIDGE_LOCAL_DIR"] ??
 	resolve(import.meta.dirname, "../../token-bridge-contracts");
@@ -52,11 +40,14 @@ const PORTAL_LOCAL_NETWORK_PATH =
 		import.meta.dirname,
 		"../../arbitrum-portal/packages/arb-token-bridge-ui/src/util/networksNitroTestnode.generated.json",
 	);
-const BRIDGE_DEPLOY_TIMEOUT_MS = 300_000;
 const FUNDING_RESERVE_WEI = 1n * 10n ** 18n;
 const TOKENBRIDGE_DEPLOYER_TARGET_L1_WEI = 100n * 10n ** 18n;
 const TOKENBRIDGE_DEPLOYER_TARGET_L2_WEI = 100n * 10n ** 18n;
 const TOKENBRIDGE_DEPLOYER_TARGET_L3_WEI = 10n * 10n ** 18n;
+const TOKEN_BRIDGE_TX_GAS_LIMIT = 6_000_000n;
+const TOKEN_BRIDGE_RETRYABLE_GAS_LIMIT = 20_000_000n;
+const TOKEN_BRIDGE_RETRYABLE_SUBMISSION_COST = 4_000_000_000_000n;
+const WETH_GATEWAY_RETRYABLE_GAS_LIMIT = 100_000n;
 
 export interface ComposeContext {
 	composeFile: string;
@@ -92,6 +83,26 @@ interface L2L3NetworkFile {
 	};
 }
 
+interface TokenBridgeContracts {
+	parentChainContracts: {
+		router: Address;
+		standardGateway: Address;
+		customGateway: Address;
+		wethGateway: Address;
+		weth: Address;
+		multicall: Address;
+	};
+	orbitChainContracts: {
+		router: Address;
+		standardGateway: Address;
+		customGateway: Address;
+		wethGateway: Address;
+		weth: Address;
+		multicall: Address;
+		proxyAdmin: Address;
+	};
+}
+
 export function parseTokenBridgeCreatorAddress(output: string): string {
 	const logicMatch = output.match(
 		/L1AtomicTokenBridgeCreator created at address:\s+(0x[a-fA-F0-9]{40})/,
@@ -118,10 +129,6 @@ export function parseTokenBridgeCreatorAddress(output: string): string {
 		throw new Error(`Failed to parse L1TokenBridgeCreator from output: ${output}`);
 	}
 	return creatorAddress;
-}
-
-function runAdminCli(args: string[], timeoutMs = BRIDGE_DEPLOY_TIMEOUT_MS): string {
-	return execOrThrow(ADMIN_CLI_NODE_BIN, [getAdminCliEntry(), ...args], { timeout: timeoutMs });
 }
 
 async function getBalanceWei(address: Address, rpcUrl: string): Promise<bigint> {
@@ -216,7 +223,6 @@ function deployTokenBridgeCreator(params: {
 	const output = execOrThrow(
 		"env",
 		[
-			...(NODE20_BIN_DIR ? [`PATH=${NODE20_BIN_DIR}:${process.env["PATH"] ?? ""}`] : []),
 			`BASECHAIN_RPC=${toHostAccessibleRpcUrl(params.parentRpc)}`,
 			`BASECHAIN_DEPLOYER_KEY=${params.parentKey}`,
 			`BASECHAIN_WETH=${params.parentWeth ?? ""}`,
@@ -237,37 +243,121 @@ function waitForCreatorSettlement(seconds = 10): void {
 	execOrThrow("sleep", [String(seconds)], { timeout: (seconds + 1) * 1000 });
 }
 
-function deployChildChainFromSpec(
-	specPath: string,
-	configDir: string,
-	privateKey: string,
-	outputDirName: "l2" | "l3",
-): void {
-	mkdirSync(getAdminOutputDir(configDir, outputDirName), { recursive: true });
-	const args = [
-		"deploy",
-		"child",
-		"--config",
-		specPath,
-		"--private-key",
-		privateKey,
-		"--yes",
-		"--output-dir",
-		getAdminOutputDir(configDir, outputDirName),
-	];
+async function deployChildChainFromSpec(
+	params: BridgeDeployParams & {
+		parentRpc: string;
+		childRpc: string;
+		tokenBridgeCreator: Address;
+		deployment: ReturnType<typeof readDeploymentArtifact>;
+		outbox: string;
+		chainName: string;
+		chainId: number;
+		parentChainId: number;
+		outputDirName: "l2" | "l3";
+	},
+): Promise<void> {
+	mkdirSync(getAdminOutputDir(params.configDir, params.outputDirName), { recursive: true });
+
+	const nativeTokenAddress = params.deployment["native-token"] as Address | undefined;
+	const parentChainPublicClient = publicClient(params.parentRpc);
+	const orbitChainPublicClient = publicClient(params.childRpc);
+	const deployTokenBridgeContracts = async (): Promise<TokenBridgeContracts> => {
+		const result = await createTokenBridge({
+			rollupOwner: privateKeyToAccount(params.rollupOwnerKey as `0x${string}`).address,
+			rollupAddress: params.rollupAddress as Address,
+			rollupDeploymentBlockNumber: BigInt(params.deployment["deployed-at"] ?? 0),
+			account: privateKeyToAccount(params.parentKey as `0x${string}`),
+			...(nativeTokenAddress && nativeTokenAddress !== ZERO_ADDRESS ? { nativeTokenAddress } : {}),
+			parentChainPublicClient,
+			orbitChainPublicClient,
+			tokenBridgeCreatorAddressOverride: params.tokenBridgeCreator,
+			gasOverrides: {
+				gasLimit: {
+					base: TOKEN_BRIDGE_TX_GAS_LIMIT,
+				},
+			},
+			retryableGasOverrides: {
+				maxGasForFactory: {
+					base: TOKEN_BRIDGE_RETRYABLE_GAS_LIMIT,
+				},
+				maxGasForContracts: {
+					base: TOKEN_BRIDGE_RETRYABLE_GAS_LIMIT,
+				},
+				maxSubmissionCostForFactory: {
+					base: TOKEN_BRIDGE_RETRYABLE_SUBMISSION_COST,
+				},
+				maxSubmissionCostForContracts: {
+					base: TOKEN_BRIDGE_RETRYABLE_SUBMISSION_COST,
+				},
+			},
+			setWethGatewayGasOverrides: {
+				gasLimit: {
+					base: WETH_GATEWAY_RETRYABLE_GAS_LIMIT,
+				},
+			},
+		});
+		return result.tokenBridgeContracts;
+	};
+	const fetchExistingTokenBridgeContracts = async (): Promise<TokenBridgeContracts> =>
+		createTokenBridgeFetchTokenBridgeContracts({
+			inbox: params.deployment.inbox as Address,
+			parentChainPublicClient,
+			tokenBridgeCreatorAddressOverride: params.tokenBridgeCreator,
+		});
+	const tokenBridgeContracts = await deployChildChainWithRecovery({
+		deploy: deployTokenBridgeContracts,
+		fetchExisting: fetchExistingTokenBridgeContracts,
+	});
+
+	writeBridgeUiConfig({
+		configDir: params.configDir,
+		outputDirName: params.outputDirName,
+		chainName: params.chainName,
+		parentChainId: params.parentChainId,
+		chainId: params.chainId,
+		parentRpc: params.parentRpc,
+		childRpc: params.childRpc,
+		deployment: params.deployment,
+		outbox: params.outbox,
+		tokenBridgeContracts,
+	});
+}
+
+async function deployChildChainWithRecovery(input: {
+	deploy: () => Promise<TokenBridgeContracts>;
+	fetchExisting: () => Promise<TokenBridgeContracts>;
+}): Promise<TokenBridgeContracts> {
 	try {
-		runAdminCli(args, 600_000);
+		return await input.deploy();
 	} catch (error) {
-		if (!shouldRetryChildDeploy(specPath, error)) {
+		if (shouldFetchExistingChildDeploy(error)) {
+			console.warn("[init] Token bridge already exists; loading deployed contract addresses");
+			return input.fetchExisting();
+		}
+		if (!shouldRetryChildDeploy(error)) {
 			throw error;
 		}
-		console.warn("[init] Child deploy wrote partial state; retrying once");
-		runAdminCli(args, 600_000);
+		console.warn("[init] Token bridge deployment wrote partial state; retrying once");
+		try {
+			return await input.deploy();
+		} catch (retryError) {
+			if (shouldFetchExistingChildDeploy(retryError)) {
+				console.warn(
+					"[init] Token bridge already exists after retry; loading deployed contract addresses",
+				);
+				return input.fetchExisting();
+			}
+			throw retryError;
+		}
 	}
 }
 
-function shouldRetryChildDeploy(specPath: string, error: unknown): boolean {
-	void specPath;
+function shouldFetchExistingChildDeploy(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return message.includes("already deployed") || message.includes("already included");
+}
+
+function shouldRetryChildDeploy(error: unknown): boolean {
 	const message = error instanceof Error ? error.message : String(error);
 	return (
 		message.includes("Unexpected status for retryable ticket") ||
@@ -275,6 +365,63 @@ function shouldRetryChildDeploy(specPath: string, error: unknown): boolean {
 		message.includes("inboxToL1Deployment") ||
 		message.includes("inboxToL2Deployment") ||
 		message.includes("l1TokenToGateway")
+	);
+}
+
+function writeBridgeUiConfig(input: {
+	configDir: string;
+	outputDirName: "l2" | "l3";
+	chainName: string;
+	parentChainId: number;
+	chainId: number;
+	parentRpc: string;
+	childRpc: string;
+	deployment: ReturnType<typeof readDeploymentArtifact>;
+	outbox: string;
+	tokenBridgeContracts: TokenBridgeContracts;
+}): void {
+	const outputDir = getAdminOutputDir(input.configDir, input.outputDirName);
+	const parent = input.tokenBridgeContracts.parentChainContracts;
+	const child = input.tokenBridgeContracts.orbitChainContracts;
+	const nativeToken = input.deployment["native-token"] ?? ZERO_ADDRESS;
+	const bridgeUiConfig: BridgeUiConfigFile = {
+		chainName: input.chainName,
+		parentChainId: input.parentChainId,
+		chainId: input.chainId,
+		rollup: input.deployment.rollup,
+		parentChainRpc: input.parentRpc,
+		chainRpc: input.childRpc,
+		nativeToken,
+		coreContracts: {
+			bridge: input.deployment.bridge,
+			inbox: input.deployment.inbox,
+			outbox: input.outbox,
+			rollup: input.deployment.rollup,
+			sequencerInbox: input.deployment["sequencer-inbox"],
+		},
+		tokenBridge: {
+			parentChain: {
+				router: parent.router,
+				standardGateway: parent.standardGateway,
+				customGateway: parent.customGateway,
+				wethGateway: parent.wethGateway,
+				weth: parent.weth,
+				multicall: parent.multicall,
+			},
+			chain: {
+				router: child.router,
+				standardGateway: child.standardGateway,
+				customGateway: child.customGateway,
+				wethGateway: child.wethGateway,
+				weth: child.weth,
+				multicall: child.multicall,
+				proxyAdmin: child.proxyAdmin,
+			},
+		},
+	};
+	writeFileSync(
+		join(outputDir, "bridgeUiConfig.json"),
+		`${JSON.stringify(bridgeUiConfig, null, 2)}\n`,
 	);
 }
 
@@ -364,6 +511,12 @@ export async function deployL1L2TokenBridge(params: BridgeDeployParams): Promise
 	});
 	waitForCreatorSettlement();
 	const rollupAddress = params.rollupAddress as Address;
+	const parentDeployment = createParentDeployment({
+		deployment: l2Deployment,
+		outbox: await readAddressOrZero(rollupAddress, "outbox", parentRpc),
+		rollupEventInbox: await readAddressOrZero(rollupAddress, "rollupEventInbox", parentRpc),
+		challengeManager: await readAddressOrZero(rollupAddress, "challengeManager", parentRpc),
+	});
 	const spec = createChainSpec({
 		chainName: "arb-dev-test",
 		chainId: 412346,
@@ -371,16 +524,22 @@ export async function deployL1L2TokenBridge(params: BridgeDeployParams): Promise
 		parentRpc,
 		chainRpc: childRpc,
 		tokenBridgeCreator,
-		parentDeployment: createParentDeployment({
-			deployment: l2Deployment,
-			outbox: await readAddressOrZero(rollupAddress, "outbox", parentRpc),
-			rollupEventInbox: await readAddressOrZero(rollupAddress, "rollupEventInbox", parentRpc),
-			challengeManager: await readAddressOrZero(rollupAddress, "challengeManager", parentRpc),
-		}),
+		parentDeployment,
 		owner: accounts.l2owner.address,
 	});
 	writeChainSpecFile(specPath, spec);
-	deployChildChainFromSpec(specPath, params.configDir, params.rollupOwnerKey, "l2");
+	await deployChildChainFromSpec({
+		...params,
+		parentRpc,
+		childRpc,
+		tokenBridgeCreator: tokenBridgeCreator as Address,
+		deployment: l2Deployment,
+		outbox: parentDeployment.outbox,
+		chainName: "arb-dev-test",
+		chainId: 412346,
+		parentChainId: 1337,
+		outputDirName: "l2",
+	});
 	writeSdkNetworkFileFromBridgeUiConfig(
 		params.configDir,
 		getAdminOutputDir(params.configDir, "l2"),
@@ -395,6 +554,7 @@ export async function deployL2L3TokenBridge(params: BridgeDeployParams): Promise
 	const specPath = getChainSpecPath(params.configDir, "l3");
 	const parentRpc = toHostAccessibleRpcUrl(params.parentRpc);
 	const childRpc = toHostAccessibleRpcUrl(params.childRpc);
+	const l3Deployment = readDeploymentArtifact(params.configDir, "l3_deployment.json");
 	const tokenBridgeCreator = deployTokenBridgeCreator({
 		compose: params.compose,
 		parentRpc: params.parentRpc,
@@ -403,6 +563,12 @@ export async function deployL2L3TokenBridge(params: BridgeDeployParams): Promise
 	});
 	waitForCreatorSettlement();
 	const rollupAddress = params.rollupAddress as Address;
+	const parentDeployment = createParentDeployment({
+		deployment: l3Deployment,
+		outbox: await readAddressOrZero(rollupAddress, "outbox", parentRpc),
+		rollupEventInbox: await readAddressOrZero(rollupAddress, "rollupEventInbox", parentRpc),
+		challengeManager: await readAddressOrZero(rollupAddress, "challengeManager", parentRpc),
+	});
 	const spec = createChainSpec({
 		chainName: "orbit-dev-test",
 		chainId: 333333,
@@ -410,22 +576,26 @@ export async function deployL2L3TokenBridge(params: BridgeDeployParams): Promise
 		parentRpc,
 		chainRpc: childRpc,
 		tokenBridgeCreator,
-		parentDeployment: createParentDeployment({
-			deployment: readDeploymentArtifact(params.configDir, "l3_deployment.json"),
-			outbox: await readAddressOrZero(rollupAddress, "outbox", parentRpc),
-			rollupEventInbox: await readAddressOrZero(rollupAddress, "rollupEventInbox", parentRpc),
-			challengeManager: await readAddressOrZero(rollupAddress, "challengeManager", parentRpc),
-		}),
+		parentDeployment,
 		ownership: {
-			addChainOwners: [
-				readDeploymentArtifact(params.configDir, "l3_deployment.json")["upgrade-executor"],
-			],
+			addChainOwners: [l3Deployment["upgrade-executor"]],
 			removeDeployer: true,
 		},
 		owner: accounts.l3owner.address,
 	});
 	writeChainSpecFile(specPath, spec);
-	deployChildChainFromSpec(specPath, params.configDir, params.rollupOwnerKey, "l3");
+	await deployChildChainFromSpec({
+		...params,
+		parentRpc,
+		childRpc,
+		tokenBridgeCreator: tokenBridgeCreator as Address,
+		deployment: l3Deployment,
+		outbox: parentDeployment.outbox,
+		chainName: "orbit-dev-test",
+		chainId: 333333,
+		parentChainId: 412346,
+		outputDirName: "l3",
+	});
 	writeSdkNetworkFileFromBridgeUiConfig(
 		params.configDir,
 		getAdminOutputDir(params.configDir, "l3"),
