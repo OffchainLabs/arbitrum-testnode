@@ -7,6 +7,11 @@ import { parseEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { accounts } from "../accounts.js";
 import { writeChainConfig } from "../chain-config.js";
+import {
+	CONTRACT_DEPLOYER_IMAGE,
+	NITRO_CONTRACTS_WORKDIR,
+	ensureContractDeployerImage,
+} from "../contract-deployer-image.js";
 import { clampDepositAmount } from "../deposit-amount.js";
 import { composeRestart, composeUp, waitForRpc } from "../docker.js";
 import { execOrThrow } from "../exec.js";
@@ -31,7 +36,7 @@ import {
 	updateRunStep,
 } from "../run-logger.js";
 import { startAnvilWithState, startNitroFromSnapshot, stopRuntime } from "../runtime.js";
-import { deployRollupViaSdk, prepareNodeConfigFromDeployment } from "../sdk-chain.js";
+import { prepareNodeConfigFromDeployment } from "../sdk-chain.js";
 import { installSnapshotRelease } from "../snapshot-release.js";
 import {
 	DEFAULT_SNAPSHOT_ID,
@@ -71,8 +76,7 @@ const L1_RPC_DOCKER = "http://host.docker.internal:8545";
 const L2_RPC_DOCKER = "http://host.docker.internal:8547";
 const L2_RPC_INTERNAL = "http://sequencer:8547";
 
-const ROLLUPCREATOR_IMAGE = "nitro-testnode-rollupcreator:latest";
-const WASM_MODULE_ROOT = "0x8a7513bf7bb3e3db04b0d982d0e973bcf57bf8b88aef7c6d03dba3a81a56a499";
+const WASM_MODULE_ROOT = "0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a";
 const L2_DEPOSIT_READY_THRESHOLD_WEI = 250n * 10n ** 18n;
 const L3_DEPOSIT_TARGET_WEI = 50n * 10n ** 18n;
 const L3_DEPOSIT_RESERVE_WEI = 1n * 10n ** 18n;
@@ -327,20 +331,80 @@ async function waitForL3RpcWithParentChainNudges(timeoutMs = 300_000): Promise<v
 	throw new Error(`RPC at ${L3_RPC} not ready after ${timeoutMs}ms`);
 }
 
-function deployRollupViaDocker(envVars: Record<string, string>): void {
+function deployRollupViaDocker(params: {
+	dockerParentRpc: string;
+	parentChainId: string;
+	deployerKey: string;
+	childChainName: string;
+	maxDataSize: string;
+	ownerAddress: string;
+	sequencerAddress: string;
+	dockerChildChainConfigPath: string;
+	dockerDeploymentOutputPath: string;
+	dockerChainInfoOutputPath: string;
+	feeTokenAddress?: string | undefined;
+}): void {
+	ensureContractDeployerImage();
 	const args = [
 		"run",
 		"--rm",
 		"--add-host",
 		"host.docker.internal:host-gateway",
+		"--workdir",
+		NITRO_CONTRACTS_WORKDIR,
 		"-v",
 		`${CONFIG_DIR}:/config`,
+		"-e",
+		`PARENT_CHAIN_RPC=${params.dockerParentRpc}`,
+		"-e",
+		`DEPLOYER_PRIVKEY=${params.deployerKey}`,
+		"-e",
+		`PARENT_CHAIN_ID=${params.parentChainId}`,
+		"-e",
+		`CHILD_CHAIN_NAME=${params.childChainName}`,
+		"-e",
+		`MAX_DATA_SIZE=${params.maxDataSize}`,
+		"-e",
+		`OWNER_ADDRESS=${params.ownerAddress}`,
+		"-e",
+		`WASM_MODULE_ROOT=${WASM_MODULE_ROOT}`,
+		"-e",
+		`SEQUENCER_ADDRESS=${params.sequencerAddress}`,
+		"-e",
+		"AUTHORIZE_VALIDATORS=10",
+		"-e",
+		`CHILD_CHAIN_CONFIG_PATH=${params.dockerChildChainConfigPath}`,
+		"-e",
+		`CHAIN_DEPLOYMENT_INFO=${params.dockerDeploymentOutputPath}`,
+		"-e",
+		`CHILD_CHAIN_INFO=${params.dockerChainInfoOutputPath}`,
 	];
-	for (const [key, value] of Object.entries(envVars)) {
-		args.push("-e", `${key}=${value}`);
+	if (params.feeTokenAddress) {
+		args.push("-e", `FEE_TOKEN_ADDRESS=${params.feeTokenAddress}`);
 	}
-	args.push(ROLLUPCREATOR_IMAGE, "create-rollup-testnode");
-	execOrThrow("docker", args, { timeout: 300_000 });
+	args.push(
+		CONTRACT_DEPLOYER_IMAGE,
+		"hardhat",
+		"run",
+		"--no-compile",
+		"scripts/local-deployment/deployCreatorAndCreateRollup.ts",
+	);
+	const output = execOrThrow("docker", args, { timeout: 900_000 });
+	addRollupCreatorToDeployment(
+		resolve(CONFIG_DIR, params.dockerDeploymentOutputPath.slice(8)),
+		output,
+	);
+}
+
+function addRollupCreatorToDeployment(deploymentPath: string, output: string): void {
+	const match = output.match(/RollupCreator created at address:\s+(0x[a-fA-F0-9]{40})/);
+	const rollupCreator = match?.[1];
+	if (!rollupCreator) {
+		return;
+	}
+	const deployment = JSON.parse(readFileSync(deploymentPath, "utf-8")) as Record<string, unknown>;
+	deployment["rollup-creator"] = rollupCreator;
+	writeFileSync(deploymentPath, JSON.stringify(deployment, null, 2));
 }
 
 function patchConfigUrl(configPath: string, hostUrl: string, dockerUrl: string): void {
@@ -388,18 +452,16 @@ function createL2DeploySteps(): Record<string, StepRunner> {
 				owner: accounts.l2owner.address,
 			});
 			deployRollupViaDocker({
-				PARENT_CHAIN_RPC: L1_RPC_DOCKER,
-				DEPLOYER_PRIVKEY: accounts.l2owner.privateKey,
-				PARENT_CHAIN_ID: "1337",
-				CHILD_CHAIN_NAME: "arb-dev-test",
-				MAX_DATA_SIZE: "117964",
-				OWNER_ADDRESS: accounts.l2owner.address,
-				WASM_MODULE_ROOT: WASM_MODULE_ROOT,
-				SEQUENCER_ADDRESS: accounts.sequencer.address,
-				AUTHORIZE_VALIDATORS: "10",
-				CHILD_CHAIN_CONFIG_PATH: "/config/l2_chain_config.json",
-				CHAIN_DEPLOYMENT_INFO: "/config/l2_deployment.json",
-				CHILD_CHAIN_INFO: "/config/l2_chain_info.json",
+				dockerParentRpc: L1_RPC_DOCKER,
+				parentChainId: "1337",
+				deployerKey: accounts.l2owner.privateKey,
+				childChainName: "arb-dev-test",
+				maxDataSize: "117964",
+				ownerAddress: accounts.l2owner.address,
+				sequencerAddress: accounts.sequencer.address,
+				dockerChildChainConfigPath: "/config/l2_chain_config.json",
+				dockerDeploymentOutputPath: "/config/l2_deployment.json",
+				dockerChainInfoOutputPath: "/config/l2_chain_info.json",
 			});
 			copyConfigFile("l2_deployment.json", "deployment.json");
 			const deployment = readDeployment("l2_deployment.json");
@@ -585,25 +647,18 @@ function createL3Steps(feeTokenDecimals?: number): Record<string, StepRunner> {
 				);
 			}
 
-			await deployRollupViaSdk({
-				chainConfigPath: resolve(CONFIG_DIR, "l3_chain_config.json"),
-				chainId: 333333,
-				chainName: "orbit-dev-test",
-				parentChainId: 412346,
-				parentChainIsArbitrum: true,
-				parentRpcUrl: L2_RPC,
+			deployRollupViaDocker({
+				dockerParentRpc: L2_RPC_DOCKER,
+				parentChainId: "412346",
+				deployerKey: accounts.l3owner.privateKey,
+				childChainName: "orbit-dev-test",
+				maxDataSize: "104857",
 				ownerAddress: accounts.l3owner.address,
-				ownerKey: accounts.l3owner.privateKey,
-				batchPosterAddress: accounts.l3sequencer.address,
-				batchPosterKey: accounts.l3sequencer.privateKey,
-				validatorAddress: accounts.l3owner.address,
-				validatorKey: accounts.l3owner.privateKey,
-				maxDataSize: 104857n,
-				wasmModuleRoot: WASM_MODULE_ROOT as `0x${string}`,
-				deploymentOutputPath: resolve(CONFIG_DIR, "l3_deployment.json"),
-				chainInfoOutputPath: resolve(CONFIG_DIR, "l3_chain_info.json"),
-				rawNodeConfigOutputPath: resolve(CONFIG_DIR, "l3-nodeConfig.raw.json"),
-				...(feeTokenAddress ? { nativeToken: feeTokenAddress as `0x${string}` } : {}),
+				sequencerAddress: accounts.l3sequencer.address,
+				dockerChildChainConfigPath: "/config/l3_chain_config.json",
+				dockerDeploymentOutputPath: "/config/l3_deployment.json",
+				dockerChainInfoOutputPath: "/config/l3_chain_info.json",
+				...(feeTokenAddress ? { feeTokenAddress } : {}),
 			});
 
 			copyConfigFile("l3_deployment.json", "l3deployment.json");

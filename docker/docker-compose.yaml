@@ -91,23 +91,6 @@ services:
       - ../config:/config
       - tokenbridge-data:/tokenbridge-data
 
-  tokenbridge:
-    image: nitro-testnode-tokenbridge:latest
-    build:
-      context: .
-      dockerfile: tokenbridge.Dockerfile
-    depends_on:
-      - sequencer
-    environment:
-      - ARB_URL=http://sequencer:8547
-      - ETH_URL=http://host.docker.internal:8545
-    volumes:
-      - ../config:/config
-      - tokenbridge-data:/workspace
-      - /var/run/docker.sock:/var/run/docker.sock
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
 volumes:
   sequencer-data:
   l3node-data:

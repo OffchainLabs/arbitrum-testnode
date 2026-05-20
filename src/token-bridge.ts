@@ -16,6 +16,11 @@ import {
 	writeCombinedLocalNetworkFile,
 	writeSdkNetworkFileFromBridgeUiConfig,
 } from "./chain-spec.js";
+import {
+	CONTRACT_DEPLOYER_IMAGE,
+	TOKEN_BRIDGE_CONTRACTS_WORKDIR,
+	ensureContractDeployerImage,
+} from "./contract-deployer-image.js";
 import { clampDepositAmount } from "./deposit-amount.js";
 import { execOrThrow } from "./exec.js";
 import {
@@ -28,9 +33,6 @@ import {
 } from "./rpc.js";
 
 const ARB_OWNER = "0x0000000000000000000000000000000000000070" as const;
-const LOCAL_TOKEN_BRIDGE_DIR =
-	process.env["TOKEN_BRIDGE_LOCAL_DIR"] ??
-	resolve(import.meta.dirname, "../../token-bridge-contracts");
 const SDK_LOCAL_NETWORK_PATH =
 	process.env["ARBITRUM_SDK_LOCAL_NETWORK_PATH"] ??
 	resolve(import.meta.dirname, "../../arbitrum-sdk/packages/sdk/localNetwork.json");
@@ -203,6 +205,21 @@ function toHostAccessibleRpcUrl(rpcUrl: string): string {
 	}
 }
 
+function toDockerAccessibleRpcUrl(rpcUrl: string): string {
+	switch (rpcUrl) {
+		case "http://127.0.0.1:8545":
+			return "http://host.docker.internal:8545";
+		case "http://127.0.0.1:8547":
+		case "http://sequencer:8547":
+			return "http://host.docker.internal:8547";
+		case "http://127.0.0.1:8549":
+		case "http://l3node:8547":
+			return "http://host.docker.internal:8549";
+		default:
+			return rpcUrl;
+	}
+}
+
 async function readAddressOrZero(
 	contractAddress: Address,
 	functionName: "outbox" | "rollupEventInbox" | "challengeManager",
@@ -217,24 +234,28 @@ function deployTokenBridgeCreator(params: {
 	parentKey: string;
 	parentWeth?: string | undefined;
 }): string {
-	const requiresParentDeployGasOverride =
-		params.parentRpc !== "http://host.docker.internal:8545" &&
-		params.parentRpc !== "http://127.0.0.1:8545";
+	ensureContractDeployerImage();
 	const output = execOrThrow(
-		"env",
+		"docker",
 		[
-			`BASECHAIN_RPC=${toHostAccessibleRpcUrl(params.parentRpc)}`,
+			"run",
+			"--rm",
+			"--add-host",
+			"host.docker.internal:host-gateway",
+			"--workdir",
+			TOKEN_BRIDGE_CONTRACTS_WORKDIR,
+			"-e",
+			`BASECHAIN_RPC=${toDockerAccessibleRpcUrl(params.parentRpc)}`,
+			"-e",
 			`BASECHAIN_DEPLOYER_KEY=${params.parentKey}`,
+			"-e",
 			`BASECHAIN_WETH=${params.parentWeth ?? ""}`,
-			...(requiresParentDeployGasOverride ? ["DEPLOY_GAS_LIMIT=50000000"] : []),
+			"-e",
 			"GAS_LIMIT_FOR_L2_FACTORY_DEPLOYMENT=10000000",
-			"yarn",
+			CONTRACT_DEPLOYER_IMAGE,
 			"deploy:token-bridge-creator",
 		],
-		{
-			cwd: LOCAL_TOKEN_BRIDGE_DIR,
-			timeout: 600_000,
-		},
+		{ timeout: 600_000 },
 	);
 	return parseTokenBridgeCreatorAddress(output);
 }
@@ -354,7 +375,12 @@ async function deployChildChainWithRecovery(input: {
 
 function shouldFetchExistingChildDeploy(error: unknown): boolean {
 	const message = error instanceof Error ? error.message : String(error);
-	return message.includes("already deployed") || message.includes("already included");
+	return (
+		message.includes("already deployed") ||
+		message.includes("already included") ||
+		message.includes("AccessControl: account") ||
+		message.includes("is missing role")
+	);
 }
 
 function shouldRetryChildDeploy(error: unknown): boolean {

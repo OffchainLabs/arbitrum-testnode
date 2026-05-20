@@ -42,13 +42,12 @@ vi.mock("@arbitrum/chain-sdk", () => ({
 }));
 
 vi.mock("../src/exec.js", () => ({
+	exec: vi.fn().mockReturnValue({ stdout: "", stderr: "", exitCode: 0 }),
 	execOrThrow: vi.fn(),
 }));
 
 function isTokenBridgeCreatorDeploy(command: string, args: string[]): boolean {
-	return (
-		(command === "docker" || command === "env") && args.includes("deploy:token-bridge-creator")
-	);
+	return command === "docker" && args.includes("deploy:token-bridge-creator");
 }
 
 vi.mock("../src/rpc.js", () => ({
@@ -177,7 +176,7 @@ describe("deployL2L3TokenBridge", () => {
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("uses the local token-bridge workspace for creator deploys on the L2 parent path", async () => {
+	it("uses the token bridge deployer image for creator deploys on the L2 parent path", async () => {
 		fs.writeFileSync(
 			path.join(tmpDir, "l3_deployment.json"),
 			JSON.stringify({
@@ -215,19 +214,23 @@ describe("deployL2L3TokenBridge", () => {
 		});
 
 		expect(execOrThrow).toHaveBeenCalledWith(
-			"env",
+			"docker",
 			expect.arrayContaining([
-				"BASECHAIN_RPC=http://127.0.0.1:8547",
+				"run",
+				"--rm",
+				"--add-host",
+				"host.docker.internal:host-gateway",
+				"--workdir",
+				"/workspace/token-bridge-contracts",
+				"BASECHAIN_RPC=http://host.docker.internal:8547",
 				"BASECHAIN_WETH=0x5555555555555555555555555555555555555555",
-				"DEPLOY_GAS_LIMIT=50000000",
 				"GAS_LIMIT_FOR_L2_FACTORY_DEPLOYMENT=10000000",
-				"yarn",
+				"nitro-testnode-contract-deployer:latest",
 				"deploy:token-bridge-creator",
 			]),
-			expect.objectContaining({
-				cwd: expect.any(String),
-			}),
+			expect.objectContaining({ timeout: 600_000 }),
 		);
+		expect(execOrThrow).not.toHaveBeenCalledWith("env", expect.anything(), expect.anything());
 		expect(execOrThrow).not.toHaveBeenCalledWith(
 			expect.stringMatching(/(?:^node$|\/node$)/),
 			expect.anything(),

@@ -379,8 +379,10 @@ export async function verifySnapshotSemanticState(
 				parentGatewayRouter: string;
 				parentWeth: string;
 				parentWethGateway: string;
+				parentErc20Gateway: string;
 				childGatewayRouter: string;
 				childWethGateway: string;
+				childErc20Gateway: string;
 			};
 		};
 		l3Network?: {
@@ -388,8 +390,10 @@ export async function verifySnapshotSemanticState(
 				parentGatewayRouter: string;
 				parentWeth: string;
 				parentWethGateway: string;
+				parentErc20Gateway: string;
 				childGatewayRouter: string;
 				childWethGateway: string;
+				childErc20Gateway: string;
 			};
 		};
 	};
@@ -404,28 +408,28 @@ export async function verifySnapshotSemanticState(
 		{
 			label: "L1->L2 parent WETH gateway",
 			contract: l2Network.tokenBridge.parentGatewayRouter,
-			expected: l2Network.tokenBridge.parentWethGateway,
+			expected: [l2Network.tokenBridge.parentWethGateway, l2Network.tokenBridge.parentErc20Gateway],
 			token: l2Network.tokenBridge.parentWeth,
 			rpcUrl: rpcUrls.l1,
 		},
 		{
 			label: "L1->L2 child WETH gateway",
 			contract: l2Network.tokenBridge.childGatewayRouter,
-			expected: l2Network.tokenBridge.childWethGateway,
+			expected: [l2Network.tokenBridge.childWethGateway, l2Network.tokenBridge.childErc20Gateway],
 			token: l2Network.tokenBridge.parentWeth,
 			rpcUrl: rpcUrls.l2,
 		},
 		{
 			label: "L2->L3 parent WETH gateway",
 			contract: l3Network.tokenBridge.parentGatewayRouter,
-			expected: l3Network.tokenBridge.parentWethGateway,
+			expected: [l3Network.tokenBridge.parentWethGateway, l3Network.tokenBridge.parentErc20Gateway],
 			token: l3Network.tokenBridge.parentWeth,
 			rpcUrl: rpcUrls.l2,
 		},
 		{
 			label: "L2->L3 child WETH gateway",
 			contract: l3Network.tokenBridge.childGatewayRouter,
-			expected: l3Network.tokenBridge.childWethGateway,
+			expected: [l3Network.tokenBridge.childWethGateway, l3Network.tokenBridge.childErc20Gateway],
 			token: l3Network.tokenBridge.parentWeth,
 			rpcUrl: rpcUrls.l3,
 		},
@@ -437,8 +441,11 @@ export async function verifySnapshotSemanticState(
 			check.token as Address,
 			check.rpcUrl,
 		);
-		if (actual.toLowerCase() !== check.expected.toLowerCase()) {
-			throw new Error(`${check.label} mismatch: expected ${check.expected}, received ${actual}`);
+		const expected = Array.isArray(check.expected) ? check.expected : [check.expected];
+		if (!expected.some((address) => actual.toLowerCase() === address.toLowerCase())) {
+			throw new Error(
+				`${check.label} mismatch: expected one of ${expected.join(", ")}, received ${actual}`,
+			);
 		}
 	}
 }
