@@ -1,0 +1,16 @@
+{
+	"name": "@arbitrum/testnode",
+	"version": "0.2.2",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./src/index.d.ts",
+			"default": "./src/index.js"
+		}
+	},
+	"scripts": {
+		"build": "node --check src/index.js",
+		"typecheck": "pnpm build"
+	}
+}

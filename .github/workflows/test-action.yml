@@ -24,8 +24,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -36,18 +34,18 @@ jobs:
           TESTNODE_SNAPSHOT_GH_REPO: ${{ github.repository }}
         run: pnpm dev snapshot install --force --release-tag "${{ inputs.snapshot-version || 'v0.1.6' }}"
 
-      - name: Prepare runtime context
-        run: node scripts/ci/prepare-runtime-context.mjs --variant l3-eth --snapshot-id default
+      - name: Prepare testnode context
+        run: node scripts/ci/prepare-testnode-context.mjs --variant l3-eth --snapshot-id default
 
-      - name: Build local runtime image
-        run: docker build -f docker/ci-runtime.Dockerfile -t local/arbitrum-testnode-ci:${{ github.sha }}-nc3.2-l3-eth .
+      - name: Build local testnode image
+        run: docker build -f docker/testnode.Dockerfile -t local/arbitrum-testnode:${{ github.sha }}-nc3.2-l3-eth .
 
       - name: Run action
         id: action
         uses: ./
         with:
-          image-repository: local/arbitrum-testnode-ci
-          l3-node: true
+          image-repository: local/arbitrum-testnode
+          l3-enabled: true
           nitro-contracts-version: v3.2
           version: ${{ github.sha }}
 

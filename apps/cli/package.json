@@ -1,0 +1,21 @@
+{
+	"name": "arbitrum-testnode",
+	"version": "0.2.2",
+	"private": true,
+	"type": "module",
+	"bin": {
+		"testnode": "./dist/index.mjs"
+	},
+	"scripts": {
+		"build": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=esm --outfile=dist/index.mjs --banner:js='#!/usr/bin/env node'",
+		"dev": "tsx src/index.ts",
+		"typecheck": "tsc -p tsconfig.json --noEmit"
+	},
+	"dependencies": {
+		"@arbitrum/testnode-core": "workspace:*",
+		"@arbitrum/testnode": "workspace:*",
+		"incur": "^0.2.2",
+		"viem": "^2.47.5",
+		"zod": "^3.24.0"
+	}
+}

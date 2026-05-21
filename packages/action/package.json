@@ -1,0 +1,10 @@
+{
+	"name": "@arbitrum/testnode-action",
+	"version": "0.2.2",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "node --check src/lib.mjs && node --check src/resolve.mjs && node --check src/run.mjs",
+		"typecheck": "pnpm build"
+	}
+}

@@ -7,19 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      '@arbitrum/chain-sdk':
-        specifier: 0.26.0
-        version: 0.26.0(typescript@5.9.3)(viem@2.47.5(typescript@5.9.3)(zod@3.25.76))(zod@3.25.76)
-      incur:
-        specifier: ^0.2.2
-        version: 0.2.2(openapi-types@12.1.3)
-      viem:
-        specifier: ^2.47.5
-        version: 2.47.5(typescript@5.9.3)(zod@3.25.76)
-      zod:
-        specifier: ^3.24.0
-        version: 3.25.76
     devDependencies:
       '@biomejs/biome':
         specifier: ^1.9.0
@@ -39,6 +26,37 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.3.4)
+
+  apps/cli:
+    dependencies:
+      '@arbitrum/testnode':
+        specifier: workspace:*
+        version: link:../../packages/testnode
+      '@arbitrum/testnode-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      incur:
+        specifier: ^0.2.2
+        version: 0.2.2(openapi-types@12.1.3)
+      viem:
+        specifier: ^2.47.5
+        version: 2.47.5(typescript@5.9.3)(zod@3.25.76)
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+
+  packages/action: {}
+
+  packages/core:
+    dependencies:
+      '@arbitrum/chain-sdk':
+        specifier: 0.26.0
+        version: 0.26.0(typescript@5.9.3)(viem@2.47.5(typescript@5.9.3)(zod@3.25.76))(zod@3.25.76)
+      viem:
+        specifier: ^2.47.5
+        version: 2.47.5(typescript@5.9.3)(zod@3.25.76)
+
+  packages/testnode: {}
 
 packages:
 
