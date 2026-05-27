@@ -65,6 +65,7 @@ type StartResult =
 			l3RpcUrl: string;
 			localNetworkPath: string;
 			networkConfigPaths: string[];
+			timeboostEnabled: boolean;
 			variant: string;
 	  };
 

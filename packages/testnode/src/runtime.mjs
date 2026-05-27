@@ -337,6 +337,8 @@ export function testnodeDockerRunArgs(state) {
 	}
 	if (state.timeboostEnabled) {
 		args.push("-e", "TESTNODE_TIMEBOOST=true");
+		args.push("-e", "TESTNODE_TIMEBOOST_REDIS_URL");
+		args.push("-e", "TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS");
 	}
 	args.push(state.imageRef);
 	return args;
