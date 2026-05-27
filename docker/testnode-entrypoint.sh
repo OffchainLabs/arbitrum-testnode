@@ -6,6 +6,8 @@ DATA_ROOT="/opt/arbitrum-testnode/runtime"
 VARIANT="${TESTNODE_VARIANT:-l2}"
 NITRO_WASM_ROOTS="/home/user/nitro-legacy/machines,/home/user/target/machines"
 PIDS=""
+SEQUENCER_HTTP_API="net,web3,eth,txpool,debug"
+SEQUENCER_TIMEBOOST_ARGS=""
 
 start_background() {
 	"$@" &
@@ -37,6 +39,19 @@ echo "state file: $DATA_ROOT/anvil-state"
 ls -la "$DATA_ROOT/anvil-state" 2>&1 || echo "state file missing!"
 echo "variant: $VARIANT"
 
+if [ "${TESTNODE_TIMEBOOST:-}" = "true" ]; then
+	SEQUENCER_HTTP_API="$SEQUENCER_HTTP_API,timeboost,auctioneer"
+	SEQUENCER_TIMEBOOST_ARGS="${TESTNODE_TIMEBOOST_ARGS:-\
+		--execution.sequencer.timeboost.enable \
+		--execution.sequencer.timeboost.redis-url=${TESTNODE_TIMEBOOST_REDIS_URL:-redis://redis:6379} \
+		--execution.sequencer.timeboost.auction-contract-address=${TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS:-0xc2c0c3398915a2d2e9c33c186abfef3192ee25e8} \
+		--execution.sequencer.timeboost.auctioneer-address=${TESTNODE_TIMEBOOST_AUCTIONEER_ADDRESS:-0x46225F4cee2b4A1d506C7f894bb3dAeB21BF1596} \
+		--execution.sequencer.timeboost.sequencer-http-endpoint=${TESTNODE_TIMEBOOST_SEQUENCER_HTTP_ENDPOINT:-http://127.0.0.1:8547}}"
+	echo "timeboost: enabled"
+else
+	echo "timeboost: disabled"
+fi
+
 start_background /usr/local/bin/anvil \
 	--host 0.0.0.0 \
 	--port 8545 \
@@ -65,12 +80,13 @@ start_background env HOME="$DATA_ROOT/sequencer" /usr/local/bin/nitro \
 	--node.staker.enable=false \
 	--http.addr=0.0.0.0 \
 	--http.port=8547 \
-	--http.api=net,web3,eth,txpool,debug \
+	--http.api="$SEQUENCER_HTTP_API" \
 	--http.corsdomain='*' \
 	--http.vhosts='*' \
 	--ws.addr=0.0.0.0 \
 	--ws.port=8548 \
-	--auth.port=8551
+	--auth.port=8551 \
+	$SEQUENCER_TIMEBOOST_ARGS
 
 start_background env HOME="$DATA_ROOT/validator" /usr/local/bin/nitro \
 	--validation.wasm.allowed-wasm-module-roots "$NITRO_WASM_ROOTS" \
