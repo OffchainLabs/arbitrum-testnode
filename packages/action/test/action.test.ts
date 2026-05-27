@@ -6,6 +6,7 @@ import {
 	buildTestnodeImageRef,
 	normalizeNitroContractsVersion,
 	resolveVariant,
+	testnodeDockerRunArgs,
 } from "../src/lib.mjs";
 
 describe("resolveVariant", () => {
@@ -50,6 +51,7 @@ describe("buildActionTestnodeState", () => {
 		expect(state.variant).toBe("l3-eth");
 		expect(state.contractsVersion).toBe("v3.2");
 		expect(state.imageRef).toContain("nc3.2");
+		expect(state.timeboostEnabled).toBe(false);
 		expect(state.outputDir).toBe("/tmp/runner/arbitrum-testnode/v1.2.3/l3-eth");
 		expect(state.paths.localNetwork).toBe(
 			"/tmp/runner/arbitrum-testnode/v1.2.3/l3-eth/config/localNetwork.json",
@@ -86,6 +88,20 @@ describe("buildActionTestnodeState", () => {
 
 		expect(state.outputDir).toBe("/workspace/sdk-shadow/shadow-testnode-output");
 		expect(state.configDir).toBe("/workspace/sdk-shadow/shadow-testnode-output/config");
+	});
+
+	it("passes the Timeboost flag into docker run args when enabled", () => {
+		const state = buildActionTestnodeState({
+			contractsVersion: "v3.2",
+			l3Enabled: "false",
+			runnerTemp: "/tmp/runner",
+			timeboostEnabled: "true",
+			version: "v1.2.3",
+		});
+
+		expect(state.timeboostEnabled).toBe(true);
+		const args = testnodeDockerRunArgs(state);
+		expect(args).toEqual(expect.arrayContaining(["TESTNODE_TIMEBOOST=true"]));
 	});
 
 	it("defaults to v3.2 when contractsVersion is not provided", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStartTestnodeState } from "../src/index.js";
+import { buildStartTestnodeState, testnodeDockerRunArgs } from "../src/index.js";
 
 describe("buildStartTestnodeState", () => {
 	it("defaults to the local L3 variant and cwd-scoped output dir", () => {
@@ -28,5 +28,18 @@ describe("buildStartTestnodeState", () => {
 		expect(state.rpcUrls.l3).toBe("");
 		expect(state.paths.l2BridgeUiConfig).toBe("");
 		expect(state.paths.l2l3Network).toBe("");
+	});
+
+	it("enables Timeboost", () => {
+		const state = buildStartTestnodeState({
+			containerName: "custom-testnode",
+			cwd: "/workspace/project",
+			l3Enabled: false,
+			timeboostEnabled: true,
+			version: "v1.2.3",
+		});
+
+		const args = testnodeDockerRunArgs(state);
+		expect(args).toEqual(expect.arrayContaining(["TESTNODE_TIMEBOOST=true"]));
 	});
 });

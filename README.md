@@ -47,6 +47,7 @@ Optional config fields:
 | `containerName` | `arbitrum-testnode-<variant>` | Docker container name override |
 | `outputDir` | `./.arbitrum-testnode/<version>/<variant>` | Export directory for config files |
 | `startupTimeoutSeconds` | `120` | RPC readiness timeout |
+| `timeboostEnabled` | `false` | Enable Timeboost sequencer args and the `timeboost,auctioneer` HTTP APIs |
 | `networkConfigPath` | — | One path or an array of paths to overwrite with `localNetwork.json` |
 
 Start exports config under `outputDir/config` and boots these host RPCs:
@@ -64,6 +65,7 @@ Start exports config under `outputDir/config` and boots these host RPCs:
   with:
     version: v0.1.0
     l3-enabled: true
+    timeboost-enabled: false
     github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
@@ -77,6 +79,8 @@ The action starts a fully initialized testnode and exports environment variables
 | `ARBITRUM_TESTNODE_LOCAL_NETWORK_PATH` | Path to `localNetwork.json` with all deployed contract addresses |
 | `ARBITRUM_TESTNODE_CONFIG_DIR` | Directory with all exported config files |
 | `ARBITRUM_TESTNODE_VARIANT` | Resolved variant name, such as `l3-eth` |
+
+Timeboost does not provision Redis. The environment that starts the testnode must provide Redis and make it reachable from the testnode container. The image uses these defaults unless overridden with `TESTNODE_TIMEBOOST_ARGS` or the individual `TESTNODE_TIMEBOOST_*` variables: Redis at `redis://redis:6379`, auction contract `0xc2c0c3398915a2d2e9c33c186abfef3192ee25e8`, auctioneer `0x46225F4cee2b4A1d506C7f894bb3dAeB21BF1596`, and sequencer endpoint `http://127.0.0.1:8547`.
 
 ### Local Development
 
@@ -205,6 +209,7 @@ Derived from the official nitro-testnode mnemonic. All accounts are pre-funded o
 | `output-dir` | No | — | Directory where exported config files should be written |
 | `container-name` | No | — | Docker container name override |
 | `startup-timeout-seconds` | No | `120` | Max wait time for RPC readiness |
+| `timeboost-enabled` | No | `false` | Enable Timeboost sequencer args and the `timeboost,auctioneer` HTTP APIs |
 | `network-config-path` | No | — | Comma-separated path(s) to overwrite with exported `localNetwork.json` |
 
 ## Action Outputs

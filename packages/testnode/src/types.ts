@@ -23,6 +23,7 @@ export interface TestnodeState {
 	};
 	rpcUrls: { l1: string; l2: string; l3: string };
 	snapshotId: string;
+	timeboostEnabled: boolean;
 	variant: string;
 	variantDefinition: VariantDefinition;
 }
@@ -34,6 +35,7 @@ export interface BaseStateOptions {
 	imageRepository?: string | undefined;
 	l3Enabled?: boolean | string | undefined;
 	outputDir?: string | undefined;
+	timeboostEnabled?: boolean | string | undefined;
 	version: string;
 }
 

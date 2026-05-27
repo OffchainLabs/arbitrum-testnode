@@ -199,6 +199,7 @@ function buildTestnodeState({
 	imageRepository,
 	l3Enabled,
 	outputDir,
+	timeboostEnabled,
 	version,
 	defaultOutputDir,
 }) {
@@ -241,6 +242,7 @@ function buildTestnodeState({
 		},
 		rpcUrls,
 		snapshotId: definition.snapshotId,
+		timeboostEnabled: toBoolean(timeboostEnabled),
 		variant,
 		variantDefinition: definition,
 	};
@@ -255,6 +257,7 @@ export function buildActionTestnodeState({
 	l3Enabled,
 	outputDir,
 	runnerTemp,
+	timeboostEnabled,
 	version,
 	workspace,
 }) {
@@ -269,6 +272,7 @@ export function buildActionTestnodeState({
 				? outputDir
 				: resolve(workspace || process.cwd(), outputDir)
 			: undefined,
+		timeboostEnabled,
 		version,
 		defaultOutputDir: ({ variant, version: nextVersion }) =>
 			defaultActionOutputDir({ runnerTemp, variant, version: nextVersion }),
@@ -284,6 +288,7 @@ export function buildStartTestnodeState({
 	imageRepository,
 	l3Enabled,
 	outputDir,
+	timeboostEnabled,
 	version,
 }) {
 	return buildTestnodeState({
@@ -297,6 +302,7 @@ export function buildStartTestnodeState({
 				? outputDir
 				: resolve(cwd, outputDir)
 			: undefined,
+		timeboostEnabled,
 		version,
 		defaultOutputDir: ({ variant, version: nextVersion }) =>
 			defaultStartOutputDir({ cwd, variant, version: nextVersion }),
@@ -328,6 +334,9 @@ export function testnodeDockerRunArgs(state) {
 		}
 		args.push("-p", `127.0.0.1:${hostPorts.l3}:8549`);
 		args.push("-p", `127.0.0.1:${hostPorts.l3Ws}:8550`);
+	}
+	if (state.timeboostEnabled) {
+		args.push("-e", "TESTNODE_TIMEBOOST=true");
 	}
 	args.push(state.imageRef);
 	return args;
