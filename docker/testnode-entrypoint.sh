@@ -41,12 +41,12 @@ echo "variant: $VARIANT"
 
 if [ "${TESTNODE_TIMEBOOST:-}" = "true" ]; then
 	SEQUENCER_HTTP_API="$SEQUENCER_HTTP_API,timeboost,auctioneer"
-	SEQUENCER_TIMEBOOST_ARGS="${TESTNODE_TIMEBOOST_ARGS:-\
+	: "${TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS:?TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS is required when TESTNODE_TIMEBOOST=true}"
+	SEQUENCER_TIMEBOOST_ARGS="\
 		--execution.sequencer.timeboost.enable \
 		--execution.sequencer.timeboost.redis-url=${TESTNODE_TIMEBOOST_REDIS_URL:-redis://redis:6379} \
-		--execution.sequencer.timeboost.auction-contract-address=${TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS:-0xc2c0c3398915a2d2e9c33c186abfef3192ee25e8} \
-		--execution.sequencer.timeboost.auctioneer-address=${TESTNODE_TIMEBOOST_AUCTIONEER_ADDRESS:-0x46225F4cee2b4A1d506C7f894bb3dAeB21BF1596} \
-		--execution.sequencer.timeboost.sequencer-http-endpoint=${TESTNODE_TIMEBOOST_SEQUENCER_HTTP_ENDPOINT:-http://127.0.0.1:8547}}"
+		--execution.sequencer.timeboost.auction-contract-address=$TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS \
+		--execution.sequencer.timeboost.auctioneer-address=0x46225F4cee2b4A1d506C7f894bb3dAeB21BF1596"
 	echo "timeboost: enabled"
 else
 	echo "timeboost: disabled"

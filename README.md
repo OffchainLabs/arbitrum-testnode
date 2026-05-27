@@ -80,7 +80,7 @@ The action starts a fully initialized testnode and exports environment variables
 | `ARBITRUM_TESTNODE_CONFIG_DIR` | Directory with all exported config files |
 | `ARBITRUM_TESTNODE_VARIANT` | Resolved variant name, such as `l3-eth` |
 
-Timeboost does not provision Redis. The environment that starts the testnode must provide Redis and make it reachable from the testnode container. The image uses these defaults unless overridden with `TESTNODE_TIMEBOOST_ARGS` or the individual `TESTNODE_TIMEBOOST_*` variables: Redis at `redis://redis:6379`, auction contract `0xc2c0c3398915a2d2e9c33c186abfef3192ee25e8`, auctioneer `0x46225F4cee2b4A1d506C7f894bb3dAeB21BF1596`, and sequencer endpoint `http://127.0.0.1:8547`.
+Timeboost does not provision Redis or deploy the auction contract. When `timeboost-enabled` / `timeboostEnabled` is true, set `TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS` to the deployed auction contract address. The image defaults Redis to `redis://redis:6379`; override it with `TESTNODE_TIMEBOOST_REDIS_URL` when needed.
 
 ### Local Development
 

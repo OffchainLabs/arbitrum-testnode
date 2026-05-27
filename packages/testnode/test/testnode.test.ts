@@ -40,6 +40,12 @@ describe("buildStartTestnodeState", () => {
 		});
 
 		const args = testnodeDockerRunArgs(state);
-		expect(args).toEqual(expect.arrayContaining(["TESTNODE_TIMEBOOST=true"]));
+		expect(args).toEqual(
+			expect.arrayContaining([
+				"TESTNODE_TIMEBOOST=true",
+				"TESTNODE_TIMEBOOST_REDIS_URL",
+				"TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS",
+			]),
+		);
 	});
 });
