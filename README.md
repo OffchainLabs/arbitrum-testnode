@@ -108,7 +108,8 @@ action.yml                # Root composite action contract
 
 ## Published Variants
 
-Published images are driven by `config/variants.json`. Each entry defines a named variant:
+Published images are driven by the `VARIANTS` catalog exported by `@arbitrum/testnode`.
+Each entry defines a named variant:
 
 - `name`: the variant users select, and the final image tag suffix
 - `snapshotId`: the local snapshot directory to install and bake into the image

@@ -39,7 +39,7 @@ export interface DeployRollupViaSdkParams {
 	validatorAddress: Address;
 	validatorKey: `0x${string}`;
 	maxDataSize: bigint;
-	wasmModuleRoot: `0x${string}`;
+	wasmModuleRoot?: `0x${string}`;
 	deploymentOutputPath: string;
 	chainInfoOutputPath: string;
 	rawNodeConfigOutputPath: string;
@@ -101,7 +101,7 @@ export async function deployRollupViaSdk(params: DeployRollupViaSdkParams): Prom
 		chainId: BigInt(params.chainId),
 		owner: params.ownerAddress,
 		chainConfig: chainConfig as PrepareNodeConfigParams["chainConfig"],
-		wasmModuleRoot: params.wasmModuleRoot,
+		...(params.wasmModuleRoot ? { wasmModuleRoot: params.wasmModuleRoot } : {}),
 		...(params.feeTokenPricer ? { feeTokenPricer: params.feeTokenPricer } : {}),
 	});
 

@@ -10,7 +10,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
-import { VARIANTS } from "../../packages/action/src/lib.mjs";
+import { VARIANTS } from "../../packages/testnode/src/runtime.mjs";
 
 function readArg(name) {
 	const index = process.argv.indexOf(name);

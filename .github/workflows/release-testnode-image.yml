@@ -56,7 +56,7 @@ jobs:
           INPUT_CONTRACTS_VERSION: ${{ inputs.nitro-contracts-version }}
         run: >-
           node --input-type=module -e
-          "import { VARIANTS } from './packages/action/src/lib.mjs';
+          "import { VARIANTS } from './packages/testnode/src/runtime.mjs';
           const names =
           process.env.INPUT_VARIANT === 'all'
           ? Object.keys(VARIANTS)

@@ -2,6 +2,7 @@ export {
 	bootTestnode,
 	buildActionTestnodeState,
 	buildTestnodeImageRef,
+	collectContainerDiagnostics,
 	NITRO_CONTRACTS_VERSIONS,
 	copyNetworkConfigPaths,
 	DEFAULT_NITRO_CONTRACTS_VERSION,
@@ -13,4 +14,4 @@ export {
 	runDocker,
 	VARIANTS,
 	waitForRpc,
-} from "../../testnode/src/index.js";
+} from "../../testnode/src/runtime.mjs";

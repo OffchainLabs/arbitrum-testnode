@@ -89,6 +89,7 @@ describe("runStart", () => {
 	it("boots the testnode image and copies localNetwork.json to requested paths", () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "start-run-"));
 		const bootTestnode = vi.fn(() => ["localNetwork.json", "l1l2_network.json"]);
+		const collectContainerDiagnostics = vi.fn(() => ({ errors: [] }));
 		const copyNetworkConfigPaths = vi.fn();
 
 		const result = runStart(
@@ -107,6 +108,7 @@ describe("runStart", () => {
 			},
 			{
 				bootTestnode,
+				collectContainerDiagnostics,
 				copyNetworkConfigPaths,
 			},
 		);

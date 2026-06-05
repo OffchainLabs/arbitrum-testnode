@@ -1,6 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { bootTestnode, buildStartTestnodeState, copyNetworkConfigPaths } from "@arbitrum/testnode";
+import {
+	type ContainerDiagnostics,
+	bootTestnode,
+	buildStartTestnodeState,
+	collectContainerDiagnostics,
+	copyNetworkConfigPaths,
+} from "@arbitrum/testnode";
 import { Cli, z } from "incur";
 
 const DEFAULT_CONFIG_BASENAME = "testnode.start.json";
@@ -35,8 +41,30 @@ interface StartResolvedInput {
 
 interface StartExecutionDeps {
 	bootTestnode: typeof bootTestnode;
+	collectContainerDiagnostics: typeof collectContainerDiagnostics;
 	copyNetworkConfigPaths: typeof copyNetworkConfigPaths;
 }
+
+type StartResult =
+	| {
+			success: false;
+			error: string;
+			diagnostics: ContainerDiagnostics;
+	  }
+	| {
+			success: true;
+			configDir: string;
+			configPath?: string;
+			containerName: string;
+			exportedFiles: string[];
+			imageRef: string;
+			l1RpcUrl: string;
+			l2RpcUrl: string;
+			l3RpcUrl: string;
+			localNetworkPath: string;
+			networkConfigPaths: string[];
+			variant: string;
+	  };
 
 function resolveOptionalPath(baseDir: string, value: string | undefined): string | undefined {
 	if (!value) {
@@ -160,9 +188,10 @@ export function runStart(
 	input: StartResolvedInput,
 	deps: StartExecutionDeps = {
 		bootTestnode,
+		collectContainerDiagnostics,
 		copyNetworkConfigPaths,
 	},
-) {
+): StartResult {
 	if (!Number.isFinite(input.startupTimeoutSeconds) || input.startupTimeoutSeconds <= 0) {
 		throw new Error("startup-timeout-seconds must be a positive number");
 	}
@@ -178,7 +207,16 @@ export function runStart(
 		version: input.version,
 	});
 
-	const exported = deps.bootTestnode(state, input.startupTimeoutSeconds * 1000);
+	let exported: string[];
+	try {
+		exported = deps.bootTestnode(state, input.startupTimeoutSeconds * 1000);
+	} catch (error) {
+		return {
+			success: false as const,
+			error: error instanceof Error ? error.message : String(error),
+			diagnostics: deps.collectContainerDiagnostics(state.containerName),
+		};
+	}
 	if (input.networkConfigPaths.length > 0) {
 		deps.copyNetworkConfigPaths(state.paths.localNetwork, input.networkConfigPaths);
 	}

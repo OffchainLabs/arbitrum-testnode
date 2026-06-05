@@ -463,18 +463,18 @@ export async function ensureL1L2TokenBridgeFunding(
 	l2RpcUrl: string,
 ): Promise<void> {
 	await topUpIfNeeded(
-		accounts.funnel.address,
+		accounts.l2owner.address,
 		TOKENBRIDGE_DEPLOYER_TARGET_L1_WEI,
 		l1RpcUrl,
 		accounts.funnel.privateKey,
-		"tokenbridge deployer on L1",
+		"l2owner tokenbridge deployer on L1",
 	);
 	await topUpIfNeeded(
-		accounts.funnel.address,
+		accounts.l2owner.address,
 		TOKENBRIDGE_DEPLOYER_TARGET_L2_WEI,
 		l2RpcUrl,
 		accounts.funnel.privateKey,
-		"tokenbridge deployer on L2",
+		"l2owner tokenbridge deployer on L2",
 	);
 }
 
@@ -483,18 +483,18 @@ export async function ensureL2L3TokenBridgeFunding(
 	l3RpcUrl: string,
 ): Promise<void> {
 	await topUpIfNeeded(
-		accounts.userTokenBridgeDeployer.address,
+		accounts.l3owner.address,
 		TOKENBRIDGE_DEPLOYER_TARGET_L2_WEI,
 		l2RpcUrl,
 		accounts.funnel.privateKey,
-		"tokenbridge deployer on L2",
+		"l3owner tokenbridge deployer on L2",
 	);
 	await topUpIfNeeded(
-		accounts.userTokenBridgeDeployer.address,
+		accounts.l3owner.address,
 		TOKENBRIDGE_DEPLOYER_TARGET_L3_WEI,
 		l3RpcUrl,
 		accounts.funnel.privateKey,
-		"tokenbridge deployer on L3",
+		"l3owner tokenbridge deployer on L3",
 	);
 }
 

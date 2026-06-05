@@ -1,11 +1,10 @@
-import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import {
 	bootTestnode,
 	buildActionTestnodeState,
+	collectContainerDiagnostics,
 	copyNetworkConfigPaths,
-	runDocker,
 } from "./lib.mjs";
 
 function log(message) {
@@ -46,29 +45,15 @@ try {
 	log(`exported ${exported.length} entries: ${exported.join(", ")}`);
 } catch (error) {
 	log(`ERROR: ${error instanceof Error ? error.message : String(error)}`);
-	try {
-		const inspect = runDocker([
-			"inspect",
-			"--format",
-			"{{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}",
-			state.containerName,
-		]);
-		log(`container state: ${inspect.trim()}`);
-	} catch (e) {
-		log(`inspect failed: ${e instanceof Error ? e.message : String(e)}`);
+	const diagnostics = collectContainerDiagnostics(state.containerName);
+	if (diagnostics.inspect) {
+		log(`container state: ${diagnostics.inspect}`);
 	}
-	try {
-		const logs = execFileSync(
-			"sh",
-			[
-				"-c",
-				`docker logs ${state.containerName} 2>&1 | grep -v "Block Number\\|Block Hash\\|Block Time" | tail -100`,
-			],
-			{ encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
-		);
-		log(`container logs:\n${logs}`);
-	} catch (e) {
-		log(`log collection failed: ${e instanceof Error ? e.message : String(e)}`);
+	if (diagnostics.logs) {
+		log(`container logs:\n${diagnostics.logs}`);
+	}
+	for (const diagnosticError of diagnostics.errors) {
+		log(diagnosticError);
 	}
 	process.exit(1);
 }

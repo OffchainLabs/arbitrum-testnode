@@ -5,12 +5,12 @@
 	"type": "module",
 	"exports": {
 		".": {
-			"types": "./src/index.d.ts",
-			"default": "./src/index.js"
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
 		}
 	},
 	"scripts": {
-		"build": "node --check src/index.js",
-		"typecheck": "pnpm build"
+		"build": "tsc -b tsconfig.json --force",
+		"typecheck": "tsc -p tsconfig.json --noEmit"
 	}
 }
