@@ -1,9 +1,17 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import {
+	type CreateRollupParams,
+	type CreateRollupResults,
 	type NodeConfig,
 	type PrepareNodeConfigParams,
 	createRollup,
+	createRollupDefaultRetryablesFees,
+	createRollupEnoughCustomFeeTokenAllowance,
+	createRollupPrepareCustomFeeTokenApprovalTransactionRequest,
 	createRollupPrepareDeploymentParamsConfig,
+	createRollupPrepareTransaction,
+	createRollupPrepareTransactionReceipt,
+	createRollupPrepareTransactionRequest,
 	prepareNodeConfig,
 } from "@arbitrum/chain-sdk";
 import type { Address } from "viem";
@@ -45,10 +53,27 @@ export interface DeployRollupViaSdkParams {
 	rawNodeConfigOutputPath: string;
 	nativeToken?: Address;
 	feeTokenPricer?: Address;
+	stakeToken?: Address;
+	rollupCreatorAddress?: Address;
 }
 
 type DeploymentForNodeConfig = Partial<CreateChainDeployment> &
 	Pick<CreateChainDeployment, "rollup" | "bridge" | "inbox" | "sequencer-inbox">;
+
+interface CodeReader {
+	getCode(input: { address: Address }): Promise<`0x${string}` | undefined>;
+}
+
+async function normalizeStakeTokenAddress(
+	codeReader: CodeReader,
+	stakeToken?: Address,
+): Promise<Address> {
+	if (!stakeToken || stakeToken === ZERO_ADDRESS) {
+		return ZERO_ADDRESS;
+	}
+	const code = await codeReader.getCode({ address: stakeToken });
+	return code && code !== "0x" ? stakeToken : ZERO_ADDRESS;
+}
 
 export function prepareNodeConfigFromDeployment(input: {
 	chainName: string;
@@ -103,23 +128,34 @@ export async function deployRollupViaSdk(params: DeployRollupViaSdkParams): Prom
 		chainConfig: chainConfig as PrepareNodeConfigParams["chainConfig"],
 		...(params.wasmModuleRoot ? { wasmModuleRoot: params.wasmModuleRoot } : {}),
 		...(params.feeTokenPricer ? { feeTokenPricer: params.feeTokenPricer } : {}),
+		...(params.stakeToken ? { stakeToken: params.stakeToken } : {}),
 	});
 
-	const result = await createRollup({
-		params: {
-			config: deploymentConfig,
-			batchPosters: [params.batchPosterAddress],
-			validators: [params.validatorAddress],
-			maxDataSize: Number(params.maxDataSize),
-			...(params.nativeToken ? { nativeToken: params.nativeToken } : {}),
-		},
-		account,
+	const rollupParams = {
+		config: deploymentConfig,
+		batchPosters: [params.batchPosterAddress],
+		validators: [params.validatorAddress],
+		maxDataSize: Number(params.maxDataSize),
+		...(params.nativeToken ? { nativeToken: params.nativeToken } : {}),
+	} as CreateRollupParams<"v3.2">;
+
+	const result = params.rollupCreatorAddress
+		? await createRollupWithCreatorOverride({
+				params: rollupParams,
+				account,
+				parentChainPublicClient,
+				rollupCreatorAddress: params.rollupCreatorAddress,
+			})
+		: await createRollup({
+				params: rollupParams,
+				account,
+				parentChainPublicClient,
+			});
+
+	const stakeToken = await normalizeStakeTokenAddress(
 		parentChainPublicClient,
-	});
-
-	const stakeToken =
-		((deploymentConfig as { stakeToken?: Address }).stakeToken as Address | undefined) ??
-		ZERO_ADDRESS;
+		(deploymentConfig as { stakeToken?: Address }).stakeToken as Address | undefined,
+	);
 	const deployment: CreateChainDeployment = {
 		bridge: result.coreContracts.bridge,
 		inbox: result.coreContracts.inbox,
@@ -148,7 +184,7 @@ export async function deployRollupViaSdk(params: DeployRollupViaSdkParams): Prom
 	});
 	const deploymentWithCreator = {
 		...deployment,
-		"rollup-creator": result.transaction.to ?? ZERO_ADDRESS,
+		"rollup-creator": params.rollupCreatorAddress ?? result.transaction.to ?? ZERO_ADDRESS,
 	};
 	writeFileSync(params.deploymentOutputPath, JSON.stringify(deploymentWithCreator, null, 2));
 	writeFileSync(
@@ -174,4 +210,65 @@ export async function deployRollupViaSdk(params: DeployRollupViaSdkParams): Prom
 		),
 	);
 	writeFileSync(params.rawNodeConfigOutputPath, JSON.stringify(nodeConfig, null, 2));
+}
+
+async function createRollupWithCreatorOverride(input: {
+	params: CreateRollupParams<"v3.2">;
+	account: ReturnType<typeof privateKeyToAccount>;
+	parentChainPublicClient: ReturnType<typeof publicClient>;
+	rollupCreatorAddress: Address;
+}): Promise<CreateRollupResults> {
+	const nativeToken = input.params["nativeToken"];
+	if (nativeToken && nativeToken !== ZERO_ADDRESS) {
+		const allowanceParams = {
+			nativeToken,
+			account: input.account.address,
+			publicClient: input.parentChainPublicClient,
+			rollupCreatorAddressOverride: input.rollupCreatorAddress,
+			rollupCreatorVersion: "v3.2" as const,
+		};
+		if (!(await createRollupEnoughCustomFeeTokenAllowance(allowanceParams))) {
+			console.log("Approving custom fee token allowance for RollupCreator...");
+			const approvalTxRequest =
+				await createRollupPrepareCustomFeeTokenApprovalTransactionRequest(allowanceParams);
+			const approvalTxHash = await input.parentChainPublicClient.sendRawTransaction({
+				serializedTransaction: await input.account.signTransaction(approvalTxRequest),
+			});
+			const approvalTxReceipt = await input.parentChainPublicClient.waitForTransactionReceipt({
+				hash: approvalTxHash,
+			});
+			console.log(`Approval transaction hash is ${approvalTxReceipt.transactionHash}`);
+		}
+	}
+
+	const value =
+		nativeToken && nativeToken !== ZERO_ADDRESS ? 0n : createRollupDefaultRetryablesFees;
+	const txRequest = await createRollupPrepareTransactionRequest({
+		params: input.params,
+		account: input.account.address,
+		publicClient: input.parentChainPublicClient,
+		rollupCreatorAddressOverride: input.rollupCreatorAddress,
+		rollupCreatorVersion: "v3.2",
+		value,
+	});
+
+	console.log("Deploying the Rollup...");
+	const txHash = await input.parentChainPublicClient.sendRawTransaction({
+		serializedTransaction: await input.account.signTransaction(txRequest),
+	});
+	console.log(`Deployment transaction submitted: ${txHash}`);
+	const transactionReceipt = createRollupPrepareTransactionReceipt(
+		await input.parentChainPublicClient.waitForTransactionReceipt({ hash: txHash }),
+	);
+	console.log(`Deployment transaction confirmed in block ${transactionReceipt.blockNumber}`);
+	const transaction = createRollupPrepareTransaction(
+		await input.parentChainPublicClient.getTransaction({ hash: txHash }),
+	);
+	console.log(`Deployment transaction hash is ${transactionReceipt.transactionHash}`);
+
+	return {
+		transaction,
+		transactionReceipt,
+		coreContracts: transactionReceipt.getCoreContracts(),
+	};
 }
