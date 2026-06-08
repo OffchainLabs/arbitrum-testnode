@@ -22,7 +22,7 @@
 		"esbuild": "^0.27.3",
 		"tsx": "^4.19.0",
 		"typescript": "^5.7.0",
-		"vitest": "^2.1.0"
+		"vitest": "^3.2.6"
 	},
 	"dependencies": {
 		"@arbitrum/chain-sdk": "0.26.0",
