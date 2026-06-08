@@ -60,6 +60,7 @@ if (!definition) {
 }
 
 const contractsVersion = readArg("--nitro-contracts-version") || "";
+const testnodeName = readArg("--testnode-name") || "";
 const snapshotId = readArg("--snapshot-id") || definition.snapshotId;
 const snapshotDir = resolve(readArg("--snapshot-dir") || join("config", "snapshots", snapshotId));
 const outputDir = resolve(readArg("--output-dir") || ".testnode-context");
@@ -102,5 +103,5 @@ rewriteTree(exportConfigDir, [
 
 writeFileSync(
 	join(outputDir, "metadata.json"),
-	`${JSON.stringify({ l3Enabled: definition.l3Enabled, nitroContractsVersion: contractsVersion, snapshotId, variant }, null, 2)}\n`,
+	`${JSON.stringify({ l3Enabled: definition.l3Enabled, nitroContractsVersion: contractsVersion, snapshotId, testnodeName, variant }, null, 2)}\n`,
 );

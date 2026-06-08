@@ -3,13 +3,20 @@ name: Publish Testnode
 on:
   workflow_dispatch:
     inputs:
+      name:
+        description: "Testnode name from config/testnodes.json (provides defaults for the inputs below)"
+        required: false
+        default: ""
+        type: string
       version:
-        description: "Pinned testnode image version tag"
-        required: true
+        description: "Pinned testnode image version tag (overrides config/testnodes.json)"
+        required: false
+        default: ""
         type: string
       snapshot-version:
-        description: "Snapshot release tag to use for every selected variant"
-        required: true
+        description: "Snapshot release tag to use for every selected variant (overrides config/testnodes.json)"
+        required: false
+        default: ""
         type: string
       snapshot-repo:
         description: "GitHub repo in owner/repo form that hosts the tagged snapshot release"
@@ -44,16 +51,27 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      version: ${{ steps.resolve.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve testnode inputs
+        id: resolve
+        run: >-
+          node scripts/ci/resolve-testnode.mjs
+          --name "${{ inputs.name }}"
+          --version "${{ inputs.version }}"
+          --snapshot-version "${{ inputs.snapshot-version }}"
+          --variant "${{ inputs.variant }}"
+          --nitro-contracts-version "${{ inputs.nitro-contracts-version }}"
+
       - name: Build publish matrix
         id: matrix
         env:
-          INPUT_VARIANT: ${{ inputs.variant }}
-          INPUT_SNAPSHOT_VERSION: ${{ inputs.snapshot-version }}
-          INPUT_CONTRACTS_VERSION: ${{ inputs.nitro-contracts-version }}
+          INPUT_VARIANT: ${{ steps.resolve.outputs.variant }}
+          INPUT_SNAPSHOT_VERSION: ${{ steps.resolve.outputs.snapshot-version }}
+          INPUT_CONTRACTS_VERSION: ${{ steps.resolve.outputs.nitro-contracts-version }}
         run: >-
           node --input-type=module -e
           "import { VARIANTS } from './packages/testnode/src/runtime.mjs';
@@ -146,4 +164,4 @@ jobs:
           context: .
           file: docker/testnode.Dockerfile
           push: true
-          tags: ghcr.io/${{ steps.lower.outputs.owner }}/arbitrum-testnode:${{ inputs.version }}-${{ steps.nc.outputs.tag }}-${{ matrix.variant }}
+          tags: ghcr.io/${{ steps.lower.outputs.owner }}/arbitrum-testnode-ci:${{ needs.resolve-publish-matrix.outputs.version }}-${{ steps.nc.outputs.tag }}-${{ matrix.variant }}

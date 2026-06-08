@@ -17,7 +17,7 @@ pnpm dev start --image-version v0.2.2
 By default that resolves the `l3-eth` variant image:
 
 ```text
-ghcr.io/offchainlabs/arbitrum-testnode:v0.2.2-nc3.2-l3-eth
+ghcr.io/offchainlabs/arbitrum-testnode-ci:v0.2.2-nc3.2-l3-eth
 ```
 
 Config-driven usage:
@@ -43,7 +43,7 @@ Optional config fields:
 | `l3Enabled` | `true` | Boot the L3-enabled testnode |
 | `feeTokenDecimals` | — | Custom L3 fee token decimals (`6`, `16`, `18`, `20`) |
 | `nitroContractsVersion` | `v3.2` | Nitro contracts version tag component |
-| `imageRepository` | `ghcr.io/offchainlabs/arbitrum-testnode` | testnode image repository |
+| `imageRepository` | `ghcr.io/offchainlabs/arbitrum-testnode-ci` | testnode image repository |
 | `containerName` | `arbitrum-testnode-<variant>` | Docker container name override |
 | `outputDir` | `./.arbitrum-testnode/<version>/<variant>` | Export directory for config files |
 | `startupTimeoutSeconds` | `120` | RPC readiness timeout |
@@ -188,7 +188,7 @@ Derived from the official nitro-testnode mnemonic. All accounts are pre-funded o
 | `version` | Yes | — | Release version for the testnode image tag |
 | `l3-enabled` | No | `false` | Boot the L3-enabled testnode |
 | `github-token` | No | — | Token for GHCR authentication |
-| `image-repository` | No | `ghcr.io/offchainlabs/arbitrum-testnode` | Container image repository |
+| `image-repository` | No | `ghcr.io/offchainlabs/arbitrum-testnode-ci` | Container image repository |
 | `fee-token-decimals` | No | — | Custom fee token decimals (6, 16, 18, or 20) |
 | `nitro-contracts-version` | No | `v3.2` | Nitro contracts version tag component |
 | `output-dir` | No | — | Directory where exported config files should be written |

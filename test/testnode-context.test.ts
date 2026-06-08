@@ -106,7 +106,33 @@ describe("prepare-testnode-context", () => {
 			l3Enabled: true,
 			nitroContractsVersion: "",
 			snapshotId: "default",
+			testnodeName: "",
 			variant: "l3-eth",
 		});
+	});
+
+	it("echoes the testnode name into metadata when provided", () => {
+		const rootDir = createTempDir();
+		const snapshotDir = createSnapshotFixture(rootDir);
+		const outputDir = join(rootDir, "context");
+
+		execFileSync(
+			"node",
+			[
+				resolve("scripts/ci/prepare-testnode-context.mjs"),
+				"--variant",
+				"l3-eth",
+				"--snapshot-dir",
+				snapshotDir,
+				"--output-dir",
+				outputDir,
+				"--testnode-name",
+				"fast",
+			],
+			{ cwd: resolve("."), stdio: "pipe" },
+		);
+
+		const metadata = JSON.parse(readFileSync(join(outputDir, "metadata.json"), "utf-8"));
+		expect(metadata.testnodeName).toBe("fast");
 	});
 });

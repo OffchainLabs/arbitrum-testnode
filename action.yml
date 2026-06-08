@@ -9,7 +9,7 @@ inputs:
     description: "Token used for private GHCR authentication"
   image-repository:
     required: false
-    default: "ghcr.io/offchainlabs/arbitrum-testnode"
+    default: "ghcr.io/offchainlabs/arbitrum-testnode-ci"
     description: "Container repository prefix used to resolve the testnode image"
   l3-enabled:
     required: false

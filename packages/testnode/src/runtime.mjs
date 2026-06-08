@@ -15,7 +15,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
  * @typedef {import("./types.js").VariantDefinition} VariantDefinition
  */
 
-export const DEFAULT_TESTNODE_IMAGE_REPOSITORY = "ghcr.io/offchainlabs/arbitrum-testnode";
+export const DEFAULT_TESTNODE_IMAGE_REPOSITORY = "ghcr.io/offchainlabs/arbitrum-testnode-ci";
 
 export const NITRO_CONTRACTS_VERSIONS = {
 	"v2.1": { tagComponent: "nc2.1" },
