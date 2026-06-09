@@ -8,7 +8,12 @@ import {
 	startRunLoggingFromEnv,
 	updateRunStep,
 } from "../run-logger.js";
-import { startAnvilWithState, startNitroFromSnapshot, stopRuntime } from "../runtime.js";
+import {
+	resetRuntime,
+	startAnvilWithState,
+	startNitroFromSnapshot,
+	stopRuntime,
+} from "../runtime.js";
 import { installSnapshotRelease } from "../snapshot-release.js";
 import {
 	DEFAULT_SNAPSHOT_ID,
@@ -139,6 +144,15 @@ async function runInitForeground(
 
 	if (shouldRestoreSnapshot) {
 		return runSnapshotRestoreFlow(runtime, snapshotId, logArgs, totalStart);
+	}
+
+	if (options.rebuild) {
+		console.log("[init] Resetting runtime data for rebuild...");
+		resetRuntime({
+			composeFile: runtime.composeFile,
+			projectName: runtime.projectName,
+			configDir: runtime.configDir,
+		});
 	}
 
 	startRunLoggingFromEnv(runtime.configDir) ?? startInlineRunLogging(runtime.configDir, logArgs);

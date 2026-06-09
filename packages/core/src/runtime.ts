@@ -1,9 +1,11 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { existsSync, readdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import process from "node:process";
 import { MNEMONIC } from "./accounts.js";
-import { composeDown, composeUp, waitForRpc } from "./docker.js";
+import { composeUp, waitForRpc } from "./docker.js";
 import { exec } from "./exec.js";
-import { getAnvilStateDir } from "./snapshot.js";
+import { SNAPSHOTS_DIRNAME, getAnvilStateDir } from "./snapshot.js";
 
 export interface RuntimeRpcs {
 	l1: string;
@@ -18,12 +20,29 @@ export interface RuntimeOptions {
 }
 
 const L1_HEARTBEAT_MARKER = "testnode-l1-heartbeat";
+const STATIC_CONFIG_FILES = new Set([SNAPSHOTS_DIRNAME, "testnodes.json"]);
 
 export function stopRuntime(options: RuntimeOptions): void {
-	composeDown({ composeFile: options.composeFile, projectName: options.projectName });
 	exec("docker", ["compose", "-f", options.composeFile, "-p", options.projectName, "down"]);
 	exec("pkill", ["-f", "anvil.*--port.*8545"]);
 	exec("pkill", ["-f", L1_HEARTBEAT_MARKER]);
+}
+
+export function resetRuntime(options: RuntimeOptions): void {
+	exec("docker", ["compose", "-f", options.composeFile, "-p", options.projectName, "down", "-v"]);
+	exec("pkill", ["-f", "anvil.*--port.*8545"]);
+	exec("pkill", ["-f", L1_HEARTBEAT_MARKER]);
+
+	if (!existsSync(options.configDir)) {
+		return;
+	}
+
+	for (const entry of readdirSync(options.configDir)) {
+		if (STATIC_CONFIG_FILES.has(entry)) {
+			continue;
+		}
+		rmSync(join(options.configDir, entry), { recursive: true, force: true });
+	}
 }
 
 export function startAnvilWithState(configDir: string): ChildProcess {
