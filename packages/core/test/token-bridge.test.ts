@@ -1,7 +1,12 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createTokenBridge, createTokenBridgeFetchTokenBridgeContracts } from "@arbitrum/chain-sdk";
+import {
+	createTokenBridge,
+	createTokenBridgeFetchTokenBridgeContracts,
+	createTokenBridgePrepareSetWethGatewayTransactionReceipt,
+	createTokenBridgePrepareSetWethGatewayTransactionRequest,
+} from "@arbitrum/chain-sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as execModule from "../src/exec.js";
 import {
@@ -13,6 +18,9 @@ import {
 const mocks = vi.hoisted(() => ({
 	createTokenBridge: vi.fn(),
 	createTokenBridgeFetchTokenBridgeContracts: vi.fn(),
+	createTokenBridgePrepareSetWethGatewayTransactionRequest: vi.fn(),
+	createTokenBridgePrepareSetWethGatewayTransactionReceipt: vi.fn(),
+	waitForWethGatewayRetryables: vi.fn(),
 	tokenBridgeContracts: {
 		parentChainContracts: {
 			router: "0xa111111111111111111111111111111111111111",
@@ -39,6 +47,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@arbitrum/chain-sdk", () => ({
 	createTokenBridge: mocks.createTokenBridge,
 	createTokenBridgeFetchTokenBridgeContracts: mocks.createTokenBridgeFetchTokenBridgeContracts,
+	createTokenBridgePrepareSetWethGatewayTransactionRequest:
+		mocks.createTokenBridgePrepareSetWethGatewayTransactionRequest,
+	createTokenBridgePrepareSetWethGatewayTransactionReceipt:
+		mocks.createTokenBridgePrepareSetWethGatewayTransactionReceipt,
 }));
 
 vi.mock("../src/exec.js", () => ({
@@ -47,7 +59,8 @@ vi.mock("../src/exec.js", () => ({
 
 function isTokenBridgeCreatorDeploy(command: string, args: string[]): boolean {
 	return (
-		(command === "docker" || command === "env") && args.includes("deploy:token-bridge-creator")
+		(command === "docker" || command === "env") &&
+		args.includes("./scripts/deployment/deployTokenBridgeCreator.ts")
 	);
 }
 
@@ -72,6 +85,23 @@ vi.mock("../src/rpc.js", () => ({
 		chain: {
 			id: rpcUrl.includes(":8549") ? 333333 : rpcUrl.includes(":8547") ? 412346 : 1337,
 		},
+		sendRawTransaction: vi.fn().mockResolvedValue("0x1234"),
+		waitForTransactionReceipt: vi.fn().mockResolvedValue({
+			blockHash: "0x",
+			blockNumber: 1n,
+			contractAddress: null,
+			cumulativeGasUsed: 0n,
+			effectiveGasPrice: 0n,
+			from: "0x0000000000000000000000000000000000000000",
+			gasUsed: 0n,
+			logs: [],
+			logsBloom: "0x",
+			status: "success",
+			to: "0x0000000000000000000000000000000000000000",
+			transactionHash: "0x1234",
+			transactionIndex: 0,
+			type: "eip1559",
+		}),
 	})),
 	walletClient: vi.fn().mockReturnValue({
 		sendTransaction: vi.fn().mockResolvedValue("0x"),
@@ -152,6 +182,18 @@ describe("deployL2L3TokenBridge", () => {
 			tokenBridgeContracts: mocks.tokenBridgeContracts,
 		});
 		mocks.createTokenBridgeFetchTokenBridgeContracts.mockResolvedValue(mocks.tokenBridgeContracts);
+		mocks.createTokenBridgePrepareSetWethGatewayTransactionRequest.mockRejectedValue(
+			new Error("weth gateway is already registered in the router."),
+		);
+		mocks.waitForWethGatewayRetryables.mockResolvedValue([
+			{
+				status: "success",
+				transactionHash: "0x5555",
+			},
+		]);
+		mocks.createTokenBridgePrepareSetWethGatewayTransactionReceipt.mockReturnValue({
+			waitForRetryables: mocks.waitForWethGatewayRetryables,
+		});
 		previousSdkPath = process.env["ARBITRUM_SDK_LOCAL_NETWORK_PATH"];
 		previousPortalPath = process.env["ARBITRUM_PORTAL_LOCAL_NETWORK_PATH"];
 		process.env["ARBITRUM_SDK_LOCAL_NETWORK_PATH"] = path.join(tmpDir, "sdk-localNetwork.json");
@@ -220,9 +262,12 @@ describe("deployL2L3TokenBridge", () => {
 				"BASECHAIN_RPC=http://127.0.0.1:8547",
 				"BASECHAIN_WETH=0x5555555555555555555555555555555555555555",
 				"DEPLOY_GAS_LIMIT=50000000",
+				"POLLING_INTERVAL=100",
+				"DISABLE_CONTRACT_VERIFICATION=true",
 				"GAS_LIMIT_FOR_L2_FACTORY_DEPLOYMENT=10000000",
-				"yarn",
-				"deploy:token-bridge-creator",
+				"node",
+				expect.stringContaining("node_modules/ts-node/dist/bin.js"),
+				"./scripts/deployment/deployTokenBridgeCreator.ts",
 			]),
 			expect.objectContaining({
 				cwd: expect.any(String),
@@ -270,6 +315,24 @@ describe("deployL2L3TokenBridge", () => {
 				},
 			}),
 		);
+		expect(createTokenBridgePrepareSetWethGatewayTransactionRequest).toHaveBeenCalledWith({
+			rollup: "0x1111111111111111111111111111111111111111",
+			rollupDeploymentBlockNumber: 44n,
+			parentChainPublicClient: expect.objectContaining({
+				rpcUrl: "http://127.0.0.1:8547",
+			}),
+			orbitChainPublicClient: expect.objectContaining({
+				rpcUrl: "http://127.0.0.1:8549",
+			}),
+			account: "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+			tokenBridgeCreatorAddressOverride: "0x332Fb35767182F8ac9F9C1405db626105F6694E0",
+			retryableGasOverrides: {
+				gasLimit: {
+					base: 100_000n,
+				},
+			},
+		});
+		expect(createTokenBridgePrepareSetWethGatewayTransactionReceipt).not.toHaveBeenCalled();
 
 		const l2l3Network = JSON.parse(
 			fs.readFileSync(path.join(tmpDir, "l2l3_network.json"), "utf-8"),
@@ -375,6 +438,16 @@ describe("deployL2L3TokenBridge", () => {
 					"Token bridge contracts for Rollup 0x1111111111111111111111111111111111111111 are already deployed",
 				),
 			);
+		mocks.createTokenBridgePrepareSetWethGatewayTransactionRequest.mockResolvedValue({
+			chainId: 412346,
+			to: "0x7777777777777777777777777777777777777777",
+			value: 0n,
+			data: "0x",
+			nonce: 0,
+			gas: 21_000n,
+			maxFeePerGas: 1n,
+			maxPriorityFeePerGas: 1n,
+		});
 
 		await deployL2L3TokenBridge({
 			compose: {
@@ -398,6 +471,29 @@ describe("deployL2L3TokenBridge", () => {
 				rpcUrl: "http://127.0.0.1:8547",
 			}),
 			tokenBridgeCreatorAddressOverride: "0x332Fb35767182F8ac9F9C1405db626105F6694E0",
+		});
+		expect(createTokenBridgePrepareSetWethGatewayTransactionRequest).toHaveBeenCalledWith({
+			rollup: "0x1111111111111111111111111111111111111111",
+			rollupDeploymentBlockNumber: 44n,
+			parentChainPublicClient: expect.objectContaining({
+				rpcUrl: "http://127.0.0.1:8547",
+			}),
+			orbitChainPublicClient: expect.objectContaining({
+				rpcUrl: "http://127.0.0.1:8549",
+			}),
+			account: "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB",
+			tokenBridgeCreatorAddressOverride: "0x332Fb35767182F8ac9F9C1405db626105F6694E0",
+			retryableGasOverrides: {
+				gasLimit: {
+					base: 100_000n,
+				},
+			},
+		});
+		expect(createTokenBridgePrepareSetWethGatewayTransactionReceipt).toHaveBeenCalled();
+		expect(mocks.waitForWethGatewayRetryables).toHaveBeenCalledWith({
+			orbitPublicClient: expect.objectContaining({
+				rpcUrl: "http://127.0.0.1:8549",
+			}),
 		});
 		const l2l3Network = JSON.parse(
 			fs.readFileSync(path.join(tmpDir, "l2l3_network.json"), "utf-8"),

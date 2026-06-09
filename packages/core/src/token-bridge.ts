@@ -1,6 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { createTokenBridge, createTokenBridgeFetchTokenBridgeContracts } from "@arbitrum/chain-sdk";
+import {
+	createTokenBridge,
+	createTokenBridgeFetchTokenBridgeContracts,
+	createTokenBridgePrepareSetWethGatewayTransactionReceipt,
+	createTokenBridgePrepareSetWethGatewayTransactionRequest,
+} from "@arbitrum/chain-sdk";
 import type { Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { accounts } from "./accounts.js";
@@ -31,6 +36,8 @@ const ARB_OWNER = "0x0000000000000000000000000000000000000070" as const;
 const LOCAL_TOKEN_BRIDGE_DIR =
 	process.env["TOKEN_BRIDGE_LOCAL_DIR"] ??
 	resolve(import.meta.dirname, "../../../../token-bridge-contracts");
+const TOKEN_BRIDGE_TS_NODE = resolve(LOCAL_TOKEN_BRIDGE_DIR, "node_modules/ts-node/dist/bin.js");
+const TOKEN_BRIDGE_CREATOR_SCRIPT = "./scripts/deployment/deployTokenBridgeCreator.ts";
 const SDK_LOCAL_NETWORK_PATH =
 	process.env["ARBITRUM_SDK_LOCAL_NETWORK_PATH"] ??
 	resolve(import.meta.dirname, "../../../../arbitrum-sdk/packages/sdk/localNetwork.json");
@@ -48,6 +55,7 @@ const TOKEN_BRIDGE_TX_GAS_LIMIT = 6_000_000n;
 const TOKEN_BRIDGE_RETRYABLE_GAS_LIMIT = 20_000_000n;
 const TOKEN_BRIDGE_RETRYABLE_SUBMISSION_COST = 4_000_000_000_000n;
 const WETH_GATEWAY_RETRYABLE_GAS_LIMIT = 100_000n;
+const TOKEN_BRIDGE_POLLING_INTERVAL_MS = 100;
 
 export interface ComposeContext {
 	composeFile: string;
@@ -227,9 +235,12 @@ function deployTokenBridgeCreator(params: {
 			`BASECHAIN_DEPLOYER_KEY=${params.parentKey}`,
 			`BASECHAIN_WETH=${params.parentWeth ?? ""}`,
 			...(requiresParentDeployGasOverride ? ["DEPLOY_GAS_LIMIT=50000000"] : []),
+			`POLLING_INTERVAL=${TOKEN_BRIDGE_POLLING_INTERVAL_MS}`,
+			"DISABLE_CONTRACT_VERIFICATION=true",
 			"GAS_LIMIT_FOR_L2_FACTORY_DEPLOYMENT=10000000",
-			"yarn",
-			"deploy:token-bridge-creator",
+			"node",
+			TOKEN_BRIDGE_TS_NODE,
+			TOKEN_BRIDGE_CREATOR_SCRIPT,
 		],
 		{
 			cwd: LOCAL_TOKEN_BRIDGE_DIR,
@@ -308,6 +319,16 @@ async function deployChildChainFromSpec(
 		deploy: deployTokenBridgeContracts,
 		fetchExisting: fetchExistingTokenBridgeContracts,
 	});
+	if (!nativeTokenAddress || nativeTokenAddress === ZERO_ADDRESS) {
+		await ensureWethGatewayRegistered({
+			rollupAddress: params.rollupAddress as Address,
+			rollupDeploymentBlockNumber: BigInt(params.deployment["deployed-at"] ?? 0),
+			parentChainPublicClient,
+			orbitChainPublicClient,
+			parentKey: params.parentKey as `0x${string}`,
+			tokenBridgeCreator: params.tokenBridgeCreator,
+		});
+	}
 
 	writeBridgeUiConfig({
 		configDir: params.configDir,
@@ -349,6 +370,58 @@ async function deployChildChainWithRecovery(input: {
 			}
 			throw retryError;
 		}
+	}
+}
+
+async function ensureWethGatewayRegistered(input: {
+	rollupAddress: Address;
+	rollupDeploymentBlockNumber: bigint;
+	parentChainPublicClient: ReturnType<typeof publicClient>;
+	orbitChainPublicClient: ReturnType<typeof publicClient>;
+	parentKey: `0x${string}`;
+	tokenBridgeCreator: Address;
+}): Promise<void> {
+	const account = privateKeyToAccount(input.parentKey);
+	let txRequest: Awaited<
+		ReturnType<typeof createTokenBridgePrepareSetWethGatewayTransactionRequest>
+	>;
+	try {
+		txRequest = await createTokenBridgePrepareSetWethGatewayTransactionRequest({
+			rollup: input.rollupAddress,
+			rollupDeploymentBlockNumber: input.rollupDeploymentBlockNumber,
+			parentChainPublicClient: input.parentChainPublicClient,
+			orbitChainPublicClient: input.orbitChainPublicClient,
+			account: account.address,
+			tokenBridgeCreatorAddressOverride: input.tokenBridgeCreator,
+			retryableGasOverrides: {
+				gasLimit: {
+					base: WETH_GATEWAY_RETRYABLE_GAS_LIMIT,
+				},
+			},
+		});
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (message.includes("weth gateway is already registered in the router")) {
+			return;
+		}
+		throw error;
+	}
+
+	console.log("[init] Registering WETH gateway");
+	const txHash = await input.parentChainPublicClient.sendRawTransaction({
+		serializedTransaction: await account.signTransaction(txRequest),
+	});
+	const txReceipt = createTokenBridgePrepareSetWethGatewayTransactionReceipt(
+		await input.parentChainPublicClient.waitForTransactionReceipt({ hash: txHash }),
+	);
+	const retryableReceipts = await txReceipt.waitForRetryables({
+		orbitPublicClient: input.orbitChainPublicClient,
+	});
+	const retryableReceipt = retryableReceipts[0];
+	if (retryableReceipt?.status !== "success") {
+		throw new Error(
+			`Retryable status is not success: ${retryableReceipt?.status ?? "missing"}. Aborting...`,
+		);
 	}
 }
 
