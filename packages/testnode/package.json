@@ -1,0 +1,16 @@
+{
+	"name": "@arbitrum/testnode",
+	"version": "0.2.2",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -b tsconfig.json --force",
+		"typecheck": "tsc -p tsconfig.json --noEmit"
+	}
+}

@@ -1,12 +1,14 @@
 node_modules
 dist
 config/*.json
+!config/testnodes.json
 config/*.yaml
 config/anvil-state
 config/runs/
 config/snapshots/
-.ci-runtime-context/
+.testnode-context/
 scratch/
 config/l1-l2-admin/
 config/l2-l3-admin/
 *.log
+*.tsbuildinfo

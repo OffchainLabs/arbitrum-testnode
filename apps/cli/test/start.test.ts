@@ -1,0 +1,151 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolveStartInput, runStart } from "../src/commands/start.js";
+
+describe("resolveStartInput", () => {
+	it("uses start defaults without a config file", () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "start-defaults-"));
+
+		const resolved = resolveStartInput({ imageVersion: "v1.2.3" }, cwd);
+
+		expect(resolved.configPath).toBeUndefined();
+		expect(resolved.l3Enabled).toBe(true);
+		expect(resolved.startupTimeoutSeconds).toBe(120);
+		expect(resolved.networkConfigPaths).toEqual([]);
+	});
+
+	it("loads the default config file and resolves relative paths from its directory", () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "start-config-"));
+		const configPath = path.join(cwd, "testnode.start.json");
+		fs.writeFileSync(
+			configPath,
+			JSON.stringify({
+				version: "v1.2.3",
+				l3Enabled: false,
+				outputDir: "./exports",
+				networkConfigPath: ["./net/a.json", "./net/b.json"],
+				startupTimeoutSeconds: 45,
+			}),
+		);
+
+		const resolved = resolveStartInput({}, cwd);
+
+		expect(resolved.configPath).toBe(configPath);
+		expect(resolved.l3Enabled).toBe(false);
+		expect(resolved.outputDir).toBe(path.join(cwd, "exports"));
+		expect(resolved.networkConfigPaths).toEqual([
+			path.join(cwd, "net/a.json"),
+			path.join(cwd, "net/b.json"),
+		]);
+		expect(resolved.startupTimeoutSeconds).toBe(45);
+	});
+
+	it("lets CLI flags override file config and resolves those paths from cwd", () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "start-overrides-"));
+		fs.writeFileSync(
+			path.join(cwd, "testnode.start.json"),
+			JSON.stringify({
+				version: "v1.0.0",
+				l3Enabled: false,
+				outputDir: "./from-config",
+				networkConfigPath: "./from-config/network.json",
+			}),
+		);
+
+		const resolved = resolveStartInput(
+			{
+				l3Enabled: true,
+				networkConfigPath: "./from-cli/network.json, ./second/network.json",
+				outputDir: "./from-cli",
+				imageVersion: "v2.0.0",
+			},
+			cwd,
+		);
+
+		expect(resolved.version).toBe("v2.0.0");
+		expect(resolved.l3Enabled).toBe(true);
+		expect(resolved.outputDir).toBe(path.join(cwd, "from-cli"));
+		expect(resolved.networkConfigPaths).toEqual([
+			path.join(cwd, "from-cli/network.json"),
+			path.join(cwd, "second/network.json"),
+		]);
+	});
+
+	it("requires a version from flags or config", () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "start-version-"));
+		expect(() => resolveStartInput({}, cwd)).toThrow(
+			"start requires image version via --image-version or testnode.start.json",
+		);
+	});
+});
+
+describe("runStart", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("boots the testnode image and copies localNetwork.json to requested paths", () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "start-run-"));
+		const bootTestnode = vi.fn(() => ["localNetwork.json", "l1l2_network.json"]);
+		const collectContainerDiagnostics = vi.fn(() => ({ errors: [] }));
+		const copyNetworkConfigPaths = vi.fn();
+
+		const result = runStart(
+			{
+				configPath: undefined,
+				containerName: undefined,
+				cwd,
+				feeTokenDecimals: undefined,
+				imageRepository: undefined,
+				l3Enabled: true,
+				networkConfigPaths: [path.join(cwd, "sdk/localNetwork.json")],
+				nitroContractsVersion: undefined,
+				outputDir: undefined,
+				startupTimeoutSeconds: 120,
+				version: "v1.2.3",
+			},
+			{
+				bootTestnode,
+				collectContainerDiagnostics,
+				copyNetworkConfigPaths,
+			},
+		);
+
+		expect(bootTestnode).toHaveBeenCalledWith(
+			expect.objectContaining({
+				containerName: "arbitrum-testnode-l3-eth",
+				outputDir: path.join(cwd, ".arbitrum-testnode/v1.2.3/l3-eth"),
+				variant: "l3-eth",
+			}),
+			120_000,
+		);
+		expect(copyNetworkConfigPaths).toHaveBeenCalledWith(
+			path.join(cwd, ".arbitrum-testnode/v1.2.3/l3-eth/config/localNetwork.json"),
+			[path.join(cwd, "sdk/localNetwork.json")],
+		);
+		expect(result.success).toBe(true);
+		expect(result.localNetworkPath).toBe(
+			path.join(cwd, ".arbitrum-testnode/v1.2.3/l3-eth/config/localNetwork.json"),
+		);
+	});
+
+	it("rejects non-positive startup timeouts", () => {
+		expect(() =>
+			runStart({
+				configPath: undefined,
+				containerName: undefined,
+				cwd: "/tmp/project",
+				feeTokenDecimals: undefined,
+				imageRepository: undefined,
+				l3Enabled: true,
+				networkConfigPaths: [],
+				nitroContractsVersion: undefined,
+				outputDir: undefined,
+				startupTimeoutSeconds: 0,
+				version: "v1.2.3",
+			}),
+		).toThrow("startup-timeout-seconds must be a positive number");
+	});
+});

@@ -1,0 +1,21 @@
+{
+	"name": "arbitrum-testnode",
+	"version": "0.2.2",
+	"private": true,
+	"type": "module",
+	"bin": {
+		"testnode": "./dist/index.js"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"dev": "tsx src/index.ts",
+		"typecheck": "tsc -p tsconfig.json --noEmit"
+	},
+	"dependencies": {
+		"@arbitrum/testnode-core": "workspace:*",
+		"@arbitrum/testnode": "workspace:*",
+		"incur": "^0.2.2",
+		"viem": "^2.47.5",
+		"zod": "^3.24.0"
+	}
+}

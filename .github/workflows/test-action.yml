@@ -24,8 +24,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -36,18 +34,18 @@ jobs:
           TESTNODE_SNAPSHOT_GH_REPO: ${{ github.repository }}
         run: pnpm dev snapshot install --force --release-tag "${{ inputs.snapshot-version || 'v0.1.6' }}"
 
-      - name: Prepare runtime context
-        run: node scripts/ci/prepare-runtime-context.mjs --variant l3-eth --snapshot-id default
+      - name: Prepare testnode context
+        run: node scripts/ci/prepare-testnode-context.mjs --variant l3-eth --snapshot-id default
 
-      - name: Build local runtime image
-        run: docker build -f docker/ci-runtime.Dockerfile -t local/arbitrum-testnode-ci:${{ github.sha }}-nc3.2-l3-eth .
+      - name: Build local testnode image
+        run: docker build -f docker/testnode.Dockerfile -t local/arbitrum-testnode:${{ github.sha }}-nc3.2-l3-eth .
 
       - name: Run action
         id: action
         uses: ./
         with:
-          image-repository: local/arbitrum-testnode-ci
-          l3-node: true
+          image-repository: local/arbitrum-testnode
+          l3-enabled: true
           nitro-contracts-version: v3.2
           version: ${{ github.sha }}
 
@@ -73,3 +71,45 @@ jobs:
 
       - name: Validate config server index
         run: curl -sf http://127.0.0.1:8080/
+
+  test-published-image-action:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run action against published image
+        id: action
+        uses: ./
+        with:
+          version: dl-ci-fast-2
+          nitro-contracts-version: v3.2
+          l3-enabled: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate L2 RPC
+        run: |
+          curl -s -X POST -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' \
+            "${{ steps.action.outputs.l2-rpc-url }}"

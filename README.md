@@ -4,13 +4,66 @@ A snapshot-backed Arbitrum testnode that boots L1 + L2 + L3 with token bridges i
 
 ## Quick Start
 
+### One-Command Local L3
+
+Use `start` when you want a disposable local `L1 + L2 + L3` stack from a published testnode image instead of rebuilding the full testnode locally. This is a local development path only; it does not deploy to Arbitrum Sepolia.
+
+Minimal usage:
+
+```bash
+pnpm dev start --image-version v0.2.2
+```
+
+By default that resolves the `l3-eth` variant image:
+
+```text
+ghcr.io/offchainlabs/arbitrum-testnode-ci:v0.2.2-nc3.2-l3-eth
+```
+
+Config-driven usage:
+
+```json
+{
+  "version": "v0.2.2",
+  "l3Enabled": true
+}
+```
+
+Save that as `testnode.start.json`, then run:
+
+```bash
+pnpm dev start
+```
+
+Optional config fields:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `version` | — | Required testnode image release version |
+| `l3Enabled` | `true` | Boot the L3-enabled testnode |
+| `feeTokenDecimals` | — | Custom L3 fee token decimals (`6`, `16`, `18`, `20`) |
+| `nitroContractsVersion` | `v3.2` | Nitro contracts version tag component |
+| `imageRepository` | `ghcr.io/offchainlabs/arbitrum-testnode-ci` | testnode image repository |
+| `containerName` | `arbitrum-testnode-<variant>` | Docker container name override |
+| `outputDir` | `./.arbitrum-testnode/<version>/<variant>` | Export directory for config files |
+| `startupTimeoutSeconds` | `120` | RPC readiness timeout |
+| `networkConfigPath` | — | One path or an array of paths to overwrite with `localNetwork.json` |
+
+Start exports config under `outputDir/config` and boots these host RPCs:
+
+| Chain | URL |
+|------|-----|
+| L1 | `http://127.0.0.1:8545` |
+| L2 | `http://127.0.0.1:8547` |
+| L3 | `http://127.0.0.1:3347` |
+
 ### GitHub Action
 
 ```yaml
 - uses: OffchainLabs/arbitrum-testnode@v0.1.0
   with:
     version: v0.1.0
-    l3-node: true
+    l3-enabled: true
     github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
@@ -23,39 +76,65 @@ The action starts a fully initialized testnode and exports environment variables
 | `ARBITRUM_TESTNODE_L3_RPC_URL` | L3 (Orbit) RPC endpoint |
 | `ARBITRUM_TESTNODE_LOCAL_NETWORK_PATH` | Path to `localNetwork.json` with all deployed contract addresses |
 | `ARBITRUM_TESTNODE_CONFIG_DIR` | Directory with all exported config files |
+| `ARBITRUM_TESTNODE_VARIANT` | Resolved variant name, such as `l3-eth` |
 
 ### Local Development
 
 ```bash
 pnpm install
+pnpm dev start --image-version v0.2.2  # Boot the published testnode image
 pnpm dev init           # First run: deploys everything from scratch (~12 min)
 pnpm dev init           # Subsequent runs: restores from snapshot (~10 sec)
 pnpm dev stop           # Stop all services
-pnpm dev start          # Restart from saved state
-pnpm dev clean          # Remove containers and runtime data
+pnpm dev clean          # Remove containers and saved data
 pnpm dev status         # Show service and init state
 ```
 
 ## Architecture
 
 ```
-src/
-├── index.ts              # CLI entry point
-├── accounts.ts           # Deterministic HD wallet accounts (official nitro-testnode mnemonic)
-├── rpc.ts                # Viem client factories and contract ABIs
-├── state.ts              # Init state persistence (JSON)
-├── exec.ts               # Shell helpers for external CLIs
-├── docker.ts             # Docker Compose helpers + RPC polling
-├── snapshot.ts           # Snapshot capture, restore, and verification
-├── token-bridge.ts       # Token bridge deployment (L1-L2 and L2-L3)
-├── validator-wallet.ts   # Validator wallet creation and staking
-└── commands/
-    ├── init.ts           # 14-step init sequence with resume
-    ├── start.ts          # Start all Docker services
-    ├── stop.ts           # Stop all Docker services
-    ├── clean.ts          # Remove containers, volumes, config
-    └── status.ts         # Show service and init state
+apps/
+└── cli/                  # `testnode` CLI entry point and command parsing
+
+packages/
+├── core/                 # Chain, Docker, snapshot, bridge, state, and init helpers
+├── testnode/             # Image resolution and Docker launcher helpers
+└── action/               # Composite GitHub Action Node scripts
+
+docker/                   # Testnode, token bridge, and compose assets
+scripts/ci/               # Release image context preparation helpers
+action.yml                # Root composite action contract
 ```
+
+## Published Variants
+
+Published images are driven by the `VARIANTS` catalog exported by `@arbitrum/testnode`.
+Each entry defines a named variant:
+
+- `name`: the variant users select, and the final image tag suffix
+- `snapshotId`: the local snapshot directory to install and bake into the image
+- `hostPorts`: the host RPC ports exposed by `start` and the action
+- `l3Enabled`: whether the image includes an L3 node
+
+The `Publish Testnode` workflow can publish one variant or `all`. It builds image tags as:
+
+```text
+ghcr.io/<owner>/arbitrum-testnode:<version>-nc<contracts-version>-<variant>
+```
+
+The `snapshot-version` workflow input provides the snapshot release tag used for every selected variant.
+
+Publish one variant image from GitHub Actions:
+
+```text
+workflow: Publish Testnode
+version: v0.2.2
+variant: l3-eth
+nitro-contracts-version: v3.2
+snapshot-version: v0.1.6
+```
+
+Publish every catalog entry by setting `variant` to `all`. Publish every supported Nitro contracts tag by setting `nitro-contracts-version` to `all`.
 
 ## Init Sequence
 
@@ -106,19 +185,39 @@ Derived from the official nitro-testnode mnemonic. All accounts are pre-funded o
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `version` | Yes | — | Release version for the runtime image tag |
-| `l3-node` | No | `false` | Boot the L3 node |
+| `version` | Yes | — | Release version for the testnode image tag |
+| `l3-enabled` | No | `false` | Boot the L3-enabled testnode |
 | `github-token` | No | — | Token for GHCR authentication |
 | `image-repository` | No | `ghcr.io/offchainlabs/arbitrum-testnode-ci` | Container image repository |
-| `fee-token-decimals` | No | — | Custom fee token decimals (16, 18, or 20) |
+| `fee-token-decimals` | No | — | Custom fee token decimals (6, 16, 18, or 20) |
+| `nitro-contracts-version` | No | `v3.2` | Nitro contracts version tag component |
+| `output-dir` | No | — | Directory where exported config files should be written |
+| `container-name` | No | — | Docker container name override |
 | `startup-timeout-seconds` | No | `120` | Max wait time for RPC readiness |
+| `network-config-path` | No | — | Comma-separated path(s) to overwrite with exported `localNetwork.json` |
+
+## Action Outputs
+
+| Output | Description |
+|--------|-------------|
+| `config-dir` | Directory containing exported config files |
+| `local-network-path` | Path to `localNetwork.json` |
+| `l1l2-network-path` | Path to `l1l2_network.json` |
+| `l2l3-network-path` | Path to `l2l3_network.json` |
+| `l1-bridge-ui-config-path` | Path to the L1/L2 bridge UI config |
+| `l2-bridge-ui-config-path` | Path to the L2/L3 bridge UI config |
+| `l1-rpc-url` | Host RPC URL for L1 |
+| `l2-rpc-url` | Host RPC URL for L2 |
+| `l3-rpc-url` | Host RPC URL for L3 |
+| `variant` | Resolved variant name |
+| `nitro-contracts-version` | Resolved Nitro contracts version |
 
 ## Development
 
 ```bash
 pnpm install              # Install dependencies
 pnpm dev                  # Run CLI in dev mode (tsx)
-pnpm build                # Bundle to dist/index.mjs
+pnpm build                # Build all workspace packages
 pnpm test:run             # Run tests once
 pnpm lint                 # Lint check (Biome)
 pnpm lint:fix             # Auto-fix lint issues

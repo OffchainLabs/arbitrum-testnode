@@ -3,22 +3,22 @@ description: "Boot a snapshot-backed Arbitrum testnode in GitHub CI and export i
 inputs:
   version:
     required: true
-    description: "Pinned release version used to resolve the runtime image tag"
+    description: "Pinned release version used to resolve the testnode image tag"
   github-token:
     required: false
     description: "Token used for private GHCR authentication"
   image-repository:
     required: false
     default: "ghcr.io/offchainlabs/arbitrum-testnode-ci"
-    description: "Container repository prefix used to resolve the runtime image"
-  l3-node:
+    description: "Container repository prefix used to resolve the testnode image"
+  l3-enabled:
     required: false
     default: "false"
-    description: "Whether to boot the L3-enabled variant"
+    description: "Whether to boot the L3-enabled testnode"
   fee-token-decimals:
     required: false
     default: ""
-    description: "Custom L3 fee-token decimals (6, 18, or 20) when l3-node=true"
+    description: "Custom L3 fee-token decimals (6, 16, 18, or 20) when l3-enabled=true"
   nitro-contracts-version:
     description: "Nitro contracts version (e.g. v2.1, v3.2)"
     required: false
@@ -34,7 +34,7 @@ inputs:
   startup-timeout-seconds:
     required: false
     default: "120"
-    description: "Maximum time to wait for the runtime RPCs to become ready"
+    description: "Maximum time to wait for the testnode RPCs to become ready"
   network-config-path:
     required: false
     default: ""
@@ -68,7 +68,7 @@ outputs:
     description: "Host RPC URL for the L3"
     value: ${{ steps.resolve.outputs.l3-rpc-url }}
   variant:
-    description: "Resolved runtime variant"
+    description: "Resolved variant name"
     value: ${{ steps.resolve.outputs.variant }}
   nitro-contracts-version:
     description: "Resolved nitro contracts version"
@@ -82,12 +82,12 @@ runs:
         INPUT_CONTAINER_NAME: ${{ inputs.container-name }}
         INPUT_FEE_TOKEN_DECIMALS: ${{ inputs.fee-token-decimals }}
         INPUT_IMAGE_REPOSITORY: ${{ inputs.image-repository }}
-        INPUT_L3_NODE: ${{ inputs.l3-node }}
+        INPUT_L3_ENABLED: ${{ inputs.l3-enabled }}
         INPUT_NITRO_CONTRACTS_VERSION: ${{ inputs.nitro-contracts-version }}
         INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
         INPUT_VERSION: ${{ inputs.version }}
         GITHUB_WORKSPACE: ${{ github.workspace }}
-      run: node "${{ github.action_path }}/scripts/action/resolve.mjs"
+      run: node "${{ github.action_path }}/packages/action/src/resolve.mjs"
 
     - name: Log in to GHCR
       if: ${{ startsWith(inputs.image-repository, 'ghcr.io/') }}
@@ -99,22 +99,22 @@ runs:
         fi
         echo "${{ inputs.github-token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-    - name: Pull runtime image
+    - name: Pull testnode image
       if: ${{ !startsWith(inputs.image-repository, 'local/') }}
       shell: bash
       run: docker pull "${{ steps.resolve.outputs.image-ref }}"
 
-    - name: Boot runtime image
+    - name: Boot testnode image
       shell: bash
       env:
         INPUT_CONTAINER_NAME: ${{ inputs.container-name }}
         INPUT_FEE_TOKEN_DECIMALS: ${{ inputs.fee-token-decimals }}
         INPUT_IMAGE_REPOSITORY: ${{ inputs.image-repository }}
-        INPUT_L3_NODE: ${{ inputs.l3-node }}
+        INPUT_L3_ENABLED: ${{ inputs.l3-enabled }}
         INPUT_NITRO_CONTRACTS_VERSION: ${{ inputs.nitro-contracts-version }}
         INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
         INPUT_NETWORK_CONFIG_PATH: ${{ inputs.network-config-path }}
         INPUT_STARTUP_TIMEOUT_SECONDS: ${{ inputs.startup-timeout-seconds }}
         INPUT_VERSION: ${{ inputs.version }}
         GITHUB_WORKSPACE: ${{ github.workspace }}
-      run: node "${{ github.action_path }}/scripts/action/run.mjs"
+      run: node "${{ github.action_path }}/packages/action/src/run.mjs"

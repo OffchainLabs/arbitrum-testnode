@@ -1,0 +1,25 @@
+{
+	"testnodes": {
+		"default": {
+			"variant": "l3-eth",
+			"snapshotId": "default",
+			"snapshotReleaseTag": "v0.1.6",
+			"version": "v0.2.0",
+			"nitroContractsVersion": "v3.2"
+		},
+		"l2": {
+			"variant": "l2",
+			"snapshotId": "l2",
+			"snapshotReleaseTag": "v0.1.6",
+			"version": "v0.2.0",
+			"nitroContractsVersion": "v3.2"
+		},
+		"fast": {
+			"variant": "l3-eth",
+			"snapshotId": "default",
+			"snapshotReleaseTag": "v0.1.6",
+			"version": "dl-ci-fast-2",
+			"nitroContractsVersion": "v3.2"
+		}
+	}
+}

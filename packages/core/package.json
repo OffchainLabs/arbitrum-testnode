@@ -1,0 +1,24 @@
+{
+	"name": "@arbitrum/testnode-core",
+	"version": "0.2.2",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./*.js": {
+			"types": "./dist/*.d.ts",
+			"default": "./dist/*.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -b tsconfig.json --force",
+		"typecheck": "tsc -p tsconfig.json --noEmit"
+	},
+	"dependencies": {
+		"@arbitrum/chain-sdk": "0.26.0",
+		"viem": "^2.47.5"
+	}
+}
