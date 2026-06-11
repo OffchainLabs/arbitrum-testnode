@@ -34,11 +34,17 @@ describe("buildStartTestnodeState", () => {
 		const state = buildStartTestnodeState({
 			containerName: "custom-testnode",
 			cwd: "/workspace/project",
-			l3Enabled: false,
+			l3Enabled: true,
 			timeboostEnabled: true,
 			version: "v1.2.3",
 		});
 
+		expect(state.variant).toBe("l2-timeboost");
+		expect(state.outputDir).toBe("/workspace/project/.arbitrum-testnode/v1.2.3/l2-timeboost");
+		expect(state.imageRef).toBe(
+			"ghcr.io/offchainlabs/arbitrum-testnode-ci:v1.2.3-nc3.2-l2-timeboost",
+		);
+		expect(state.rpcUrls.l3).toBe("");
 		const args = testnodeDockerRunArgs(state);
 		expect(args).toEqual(
 			expect.arrayContaining([

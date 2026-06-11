@@ -135,20 +135,20 @@ describe("runStart", () => {
 
 		expect(bootTestnode).toHaveBeenCalledWith(
 			expect.objectContaining({
-				containerName: "arbitrum-testnode-l3-eth",
-				outputDir: path.join(cwd, ".arbitrum-testnode/v1.2.3/l3-eth"),
+				containerName: "arbitrum-testnode-l2-timeboost",
+				outputDir: path.join(cwd, ".arbitrum-testnode/v1.2.3/l2-timeboost"),
 				timeboostEnabled: true,
-				variant: "l3-eth",
+				variant: "l2-timeboost",
 			}),
 			120_000,
 		);
 		expect(copyNetworkConfigPaths).toHaveBeenCalledWith(
-			path.join(cwd, ".arbitrum-testnode/v1.2.3/l3-eth/config/localNetwork.json"),
+			path.join(cwd, ".arbitrum-testnode/v1.2.3/l2-timeboost/config/localNetwork.json"),
 			[path.join(cwd, "sdk/localNetwork.json")],
 		);
 		expect(result.success).toBe(true);
 		expect(result.localNetworkPath).toBe(
-			path.join(cwd, ".arbitrum-testnode/v1.2.3/l3-eth/config/localNetwork.json"),
+			path.join(cwd, ".arbitrum-testnode/v1.2.3/l2-timeboost/config/localNetwork.json"),
 		);
 	});
 
