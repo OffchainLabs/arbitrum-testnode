@@ -18,6 +18,10 @@ describe("resolveVariant", () => {
 		expect(resolveVariant({ l3Enabled: "true" })).toBe("l3-eth");
 	});
 
+	it("uses the L2 timeboost variant when timeboost is enabled", () => {
+		expect(resolveVariant({ l3Enabled: "true", timeboostEnabled: "true" })).toBe("l2-timeboost");
+	});
+
 	it("uses the custom gas token variants when decimals are provided", () => {
 		expect(resolveVariant({ feeTokenDecimals: "16", l3Enabled: "true" })).toBe("l3-custom-16");
 		expect(resolveVariant({ feeTokenDecimals: "18", l3Enabled: "true" })).toBe("l3-custom-18");
@@ -28,6 +32,12 @@ describe("resolveVariant", () => {
 		expect(() => resolveVariant({ feeTokenDecimals: "18", l3Enabled: "false" })).toThrow(
 			"fee-token-decimals requires L3 to be enabled",
 		);
+	});
+
+	it("rejects custom fee token decimals when timeboost is enabled", () => {
+		expect(() =>
+			resolveVariant({ feeTokenDecimals: "18", l3Enabled: "true", timeboostEnabled: "true" }),
+		).toThrow("fee-token-decimals is not supported with timeboost-enabled");
 	});
 });
 
@@ -93,12 +103,15 @@ describe("buildActionTestnodeState", () => {
 	it("passes the Timeboost flag into docker run args when enabled", () => {
 		const state = buildActionTestnodeState({
 			contractsVersion: "v3.2",
-			l3Enabled: "false",
+			l3Enabled: "true",
 			runnerTemp: "/tmp/runner",
 			timeboostEnabled: "true",
 			version: "v1.2.3",
 		});
 
+		expect(state.variant).toBe("l2-timeboost");
+		expect(state.imageRef).toBe(`${DEFAULT_TESTNODE_IMAGE_REPOSITORY}:v1.2.3-nc3.2-l2-timeboost`);
+		expect(state.rpcUrls.l3).toBe("");
 		expect(state.timeboostEnabled).toBe(true);
 		const args = testnodeDockerRunArgs(state);
 		expect(args).toEqual(

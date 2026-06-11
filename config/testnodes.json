@@ -14,6 +14,13 @@
 			"version": "v0.2.0",
 			"nitroContractsVersion": "v3.2"
 		},
+		"timeboost": {
+			"variant": "l2-timeboost",
+			"snapshotId": "l2-timeboost",
+			"snapshotReleaseTag": "v0.1.6",
+			"version": "v0.2.0",
+			"nitroContractsVersion": "v3.2"
+		},
 		"fast": {
 			"variant": "l3-eth",
 			"snapshotId": "default",

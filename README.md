@@ -47,7 +47,7 @@ Optional config fields:
 | `containerName` | `arbitrum-testnode-<variant>` | Docker container name override |
 | `outputDir` | `./.arbitrum-testnode/<version>/<variant>` | Export directory for config files |
 | `startupTimeoutSeconds` | `120` | RPC readiness timeout |
-| `timeboostEnabled` | `false` | Enable Timeboost sequencer args and the `timeboost,auctioneer` HTTP APIs |
+| `timeboostEnabled` | `false` | Use the L2 Timeboost image variant and enable Timeboost sequencer args plus the `timeboost,auctioneer` HTTP APIs |
 | `networkConfigPath` | — | One path or an array of paths to overwrite with `localNetwork.json` |
 
 Start exports config under `outputDir/config` and boots these host RPCs:
@@ -80,7 +80,7 @@ The action starts a fully initialized testnode and exports environment variables
 | `ARBITRUM_TESTNODE_CONFIG_DIR` | Directory with all exported config files |
 | `ARBITRUM_TESTNODE_VARIANT` | Resolved variant name, such as `l3-eth` |
 
-Snapshots built by `init --timeboost-enabled` deploy a local Timeboost `ExpressLaneAuction` contract on L2 and write its proxy address to `timeboost-auction.json`. When `timeboost-enabled` / `timeboostEnabled` is true, the published image uses that deployed address by default; `TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS` can still override it. Timeboost requires an external Redis endpoint supplied through `TESTNODE_TIMEBOOST_REDIS_URL`; the testnode does not provision Redis.
+Snapshots built by `init --timeboost-enabled` deploy a local Timeboost `ExpressLaneAuction` contract on L2 and write its proxy address to `timeboost-auction.json`. When `timeboost-enabled` / `timeboostEnabled` is true, the action and `start` command resolve the L2-only `l2-timeboost` image tag, for example `ghcr.io/offchainlabs/arbitrum-testnode-ci:v0.2.2-nc3.2-l2-timeboost`. The published image uses the deployed address by default; `TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS` can still override it. Timeboost requires an external Redis endpoint supplied through `TESTNODE_TIMEBOOST_REDIS_URL`; the testnode does not provision Redis.
 
 ### Local Development
 
@@ -119,6 +119,7 @@ Each entry defines a named variant:
 - `snapshotId`: the local snapshot directory to install and bake into the image
 - `hostPorts`: the host RPC ports exposed by `start` and the action
 - `l3Enabled`: whether the image includes an L3 node
+- `timeboostEnabled`: whether the variant automatically starts the L2 sequencer with Timeboost enabled
 
 The `Publish Testnode` workflow can publish one variant or `all`. It builds image tags as:
 
@@ -139,6 +140,8 @@ snapshot-version: v0.1.6
 ```
 
 Publish every catalog entry by setting `variant` to `all`. Publish every supported Nitro contracts tag by setting `nitro-contracts-version` to `all`.
+
+The default Timeboost publish target is `l2-timeboost`, which expects the `l2-timeboost` snapshot ID in the selected snapshot release. It can be published directly with `variant: l2-timeboost` or through the `name: timeboost` entry in `config/testnodes.json`.
 
 ## Init Sequence
 
@@ -200,7 +203,7 @@ Derived from the official nitro-testnode mnemonic. All accounts are pre-funded o
 | `output-dir` | No | — | Directory where exported config files should be written |
 | `container-name` | No | — | Docker container name override |
 | `startup-timeout-seconds` | No | `120` | Max wait time for RPC readiness |
-| `timeboost-enabled` | No | `false` | Enable Timeboost sequencer args and the `timeboost,auctioneer` HTTP APIs |
+| `timeboost-enabled` | No | `false` | Use the L2 Timeboost image variant and enable Timeboost sequencer args plus the `timeboost,auctioneer` HTTP APIs |
 | `network-config-path` | No | — | Comma-separated path(s) to overwrite with exported `localNetwork.json` |
 
 ## Action Outputs
