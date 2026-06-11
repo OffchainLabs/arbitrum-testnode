@@ -116,13 +116,24 @@ Each entry defines a named variant:
 - `hostPorts`: the host RPC ports exposed by `start` and the action
 - `l3Enabled`: whether the image includes an L3 node
 
-The `Publish Testnode` workflow can publish one variant or `all`. It builds image tags as:
+The `Publish Testnode` workflow publishes automatically when a `v*` tag is pushed.
+Tag-triggered publishes use the `default` entry in `config/testnodes.json`, with the
+Git tag as the image version. The workflow can also be run manually to publish one
+variant or `all`. It builds image tags as:
 
 ```text
-ghcr.io/<owner>/arbitrum-testnode:<version>-nc<contracts-version>-<variant>
+ghcr.io/<owner>/arbitrum-testnode-ci:<version>-nc<contracts-version>-<variant>
 ```
 
 The `snapshot-version` workflow input provides the snapshot release tag used for every selected variant.
+For automatic tag publishes, the snapshot release tag comes from `config/testnodes.json`.
+
+Publish the default testnode image automatically:
+
+```bash
+git tag v0.2.2
+git push origin v0.2.2
+```
 
 Publish one variant image from GitHub Actions:
 
