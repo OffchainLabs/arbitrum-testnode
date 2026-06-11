@@ -33,6 +33,16 @@ monitor_pids() {
 	done
 }
 
+read_timeboost_auction_contract_address() {
+	if [ -n "${TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS:-}" ]; then
+		printf "%s" "$TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS"
+		return
+	fi
+	if [ -f "$CONFIG_ROOT/timeboost-auction.json" ]; then
+		jq -r '.auctionContract // empty' "$CONFIG_ROOT/timeboost-auction.json"
+	fi
+}
+
 trap cleanup EXIT INT TERM
 
 echo "state file: $DATA_ROOT/anvil-state"
@@ -41,13 +51,15 @@ echo "variant: $VARIANT"
 
 if [ "${TESTNODE_TIMEBOOST:-}" = "true" ]; then
 	SEQUENCER_HTTP_API="$SEQUENCER_HTTP_API,timeboost,auctioneer"
-	: "${TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS:?TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS is required when TESTNODE_TIMEBOOST=true}"
+	TIMEBOOST_AUCTION_CONTRACT_ADDRESS="$(read_timeboost_auction_contract_address)"
+	: "${TIMEBOOST_AUCTION_CONTRACT_ADDRESS:?timeboost-auction.json or TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS is required when TESTNODE_TIMEBOOST=true}"
+	: "${TESTNODE_TIMEBOOST_REDIS_URL:?TESTNODE_TIMEBOOST_REDIS_URL is required when TESTNODE_TIMEBOOST=true}"
 	SEQUENCER_TIMEBOOST_ARGS="\
 		--execution.sequencer.timeboost.enable \
-		--execution.sequencer.timeboost.redis-url=${TESTNODE_TIMEBOOST_REDIS_URL:-redis://redis:6379} \
-		--execution.sequencer.timeboost.auction-contract-address=$TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS \
+		--execution.sequencer.timeboost.redis-url=$TESTNODE_TIMEBOOST_REDIS_URL \
+		--execution.sequencer.timeboost.auction-contract-address=$TIMEBOOST_AUCTION_CONTRACT_ADDRESS \
 		--execution.sequencer.timeboost.auctioneer-address=0x46225F4cee2b4A1d506C7f894bb3dAeB21BF1596"
-	echo "timeboost: enabled"
+	echo "timeboost: enabled with auction $TIMEBOOST_AUCTION_CONTRACT_ADDRESS"
 else
 	echo "timeboost: disabled"
 fi

@@ -25,7 +25,7 @@ import {
 import { createState, getNextPendingStep, loadState, markStepFailed, saveState } from "../state.js";
 import { makeStepRunners } from "./chain-steps.js";
 import { type InitContext, type InitRuntime, createInitRuntime } from "./context.js";
-import { INIT_STEPS, INIT_STEP_NAMES } from "./steps.js";
+import { INIT_STEP_NAMES, getInitSteps } from "./steps.js";
 
 export { createInitContext, type InitContext } from "./context.js";
 
@@ -39,15 +39,17 @@ async function runInitLoop(
 	runtime: InitRuntime,
 	feeTokenDecimals?: number,
 	rebuild?: boolean,
+	timeboostEnabled?: boolean,
 ): Promise<{
 	success: boolean;
 	failedStep?: string;
 	error?: string;
 	timings?: Record<string, number>;
+	steps: string[];
 }> {
 	let state = rebuild ? createState() : (loadState(runtime.configDir) ?? createState());
 	const runners = makeStepRunners(runtime, feeTokenDecimals);
-	const steps = [...INIT_STEPS];
+	const steps = getInitSteps({ timeboostEnabled });
 	const timings: Record<string, number> = {};
 
 	let nextStep = getNextPendingStep(state, steps);
@@ -79,12 +81,12 @@ async function runInitLoop(
 				step: nextStep,
 				error: msg,
 			});
-			return { success: false, failedStep: nextStep, error: msg, timings };
+			return { success: false, failedStep: nextStep, error: msg, timings, steps };
 		}
 		nextStep = getNextPendingStep(state, steps);
 	}
 
-	return { success: true, timings };
+	return { success: true, timings, steps };
 }
 
 export { INIT_STEP_NAMES };
@@ -95,6 +97,7 @@ export interface InitCommandOptions {
 	foreground?: boolean | undefined;
 	rebuild?: boolean | undefined;
 	snapshotVersion?: string | undefined;
+	timeboostEnabled?: boolean | undefined;
 }
 
 export async function runInitCommand(options: InitCommandOptions, context: InitContext) {
@@ -108,6 +111,7 @@ export async function runInitCommand(options: InitCommandOptions, context: InitC
 		return startBackgroundInit(runtime, {
 			snapshotVersion: options.snapshotVersion,
 			feeTokenDecimals,
+			timeboostEnabled: options.timeboostEnabled,
 		});
 	}
 
@@ -126,6 +130,7 @@ async function runInitForeground(
 		foreground?: boolean | undefined;
 		rebuild?: boolean | undefined;
 		snapshotVersion?: string | undefined;
+		timeboostEnabled?: boolean | undefined;
 	},
 	snapshotId: string,
 	feeTokenDecimals: number | undefined,
@@ -156,20 +161,32 @@ async function runInitForeground(
 	}
 
 	startRunLoggingFromEnv(runtime.configDir) ?? startInlineRunLogging(runtime.configDir, logArgs);
-	const result = await runInitLoop(runtime, feeTokenDecimals, options.rebuild);
+	const result = await runInitLoop(
+		runtime,
+		feeTokenDecimals,
+		options.rebuild,
+		options.timeboostEnabled,
+	);
 	const totalElapsed = Date.now() - totalStart;
 	logInitTimeline(result.timings, totalElapsed);
 
 	if (!result.success) {
-		finishActiveRun("failed", {
-			exitCode: 1,
-			...(result.error ? { error: result.error } : {}),
-			...(result.failedStep ? { failedStep: result.failedStep } : {}),
-		});
-		return { success: false as const, failedStep: result.failedStep, error: result.error };
+		return finishFailedInit(result);
 	}
 
-	return finalizeFreshInit(runtime, snapshotId, totalStart);
+	return finalizeFreshInit(runtime, snapshotId, totalStart, result.steps);
+}
+
+function finishFailedInit(result: {
+	error?: string | undefined;
+	failedStep?: string | undefined;
+}) {
+	finishActiveRun("failed", {
+		exitCode: 1,
+		...(result.error ? { error: result.error } : {}),
+		...(result.failedStep ? { failedStep: result.failedStep } : {}),
+	});
+	return { success: false as const, failedStep: result.failedStep, error: result.error };
 }
 
 function assertValidFeeTokenDecimals(feeTokenDecimals: number | undefined): void {
@@ -189,6 +206,7 @@ function startBackgroundInit(
 	params: {
 		snapshotVersion: string | undefined;
 		feeTokenDecimals: number | undefined;
+		timeboostEnabled: boolean | undefined;
 	},
 ) {
 	const extraArgs = [
@@ -196,6 +214,7 @@ function startBackgroundInit(
 		...(params.feeTokenDecimals !== undefined
 			? ["--fee-token-decimals", String(params.feeTokenDecimals)]
 			: []),
+		...(params.timeboostEnabled ? ["--timeboost-enabled"] : []),
 	];
 	const run = startDetachedInitRun(runtime.configDir, runtime.projectRoot, extraArgs);
 	return {
@@ -274,7 +293,12 @@ function logInitTimeline(timings: Record<string, number> | undefined, totalElaps
 	console.log(`  TOTAL: ${(totalElapsed / 1000).toFixed(1)}s`);
 }
 
-async function finalizeFreshInit(runtime: InitRuntime, snapshotId: string, totalStart: number) {
+async function finalizeFreshInit(
+	runtime: InitRuntime,
+	snapshotId: string,
+	totalStart: number,
+	steps: string[],
+) {
 	stopRuntime({
 		composeFile: runtime.composeFile,
 		projectName: "arbitrum-testnode",
@@ -296,7 +320,7 @@ async function finalizeFreshInit(runtime: InitRuntime, snapshotId: string, total
 	finishActiveRun("completed", { exitCode: 0 });
 	return {
 		success: true as const,
-		stepsCompleted: INIT_STEPS.length,
+		stepsCompleted: steps.length,
 		totalSeconds: totalElapsed / 1000,
 		snapshotId: snapshot.snapshotId,
 	};

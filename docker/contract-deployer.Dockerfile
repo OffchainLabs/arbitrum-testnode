@@ -44,6 +44,7 @@ WORKDIR /workspace
 COPY --from=nitro-builder /workspace/nitro-contracts /workspace/nitro-contracts
 COPY --from=token-bridge-builder /workspace/token-bridge-contracts /workspace/token-bridge-contracts
 COPY deploy-rollup-creator.ts /workspace/nitro-contracts/scripts/local-deployment/deployRollupCreatorOnly.ts
+COPY deploy-timeboost-auction.ts /workspace/nitro-contracts/scripts/local-deployment/deployTimeboostAuction.ts
 
 WORKDIR /workspace/nitro-contracts
 ENTRYPOINT ["yarn"]

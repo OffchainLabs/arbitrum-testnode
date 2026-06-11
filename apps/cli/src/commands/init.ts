@@ -24,6 +24,10 @@ export const initCli = Cli.create("init", {
 			.string()
 			.optional()
 			.describe("Snapshot release tag to install when the default snapshot is missing"),
+		timeboostEnabled: z
+			.boolean()
+			.optional()
+			.describe("Deploy Timeboost contracts and restart L2 with Timeboost enabled"),
 	}),
 	async run(c) {
 		return runInitCommand(c.options, createInitContext(PROJECT_ROOT));
