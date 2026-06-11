@@ -9,7 +9,7 @@ services:
       - sequencer-data:/home/user/.arbitrum
       - ./sequencer-entrypoint.sh:/usr/local/bin/testnode-sequencer-entrypoint:ro
     environment:
-      - TESTNODE_TIMEBOOST_REDIS_URL
+      - TESTNODE_TIMEBOOST_REDIS_URL=${TESTNODE_TIMEBOOST_REDIS_URL:-redis://timeboost-redis:6379}
     entrypoint: ["/bin/sh", "/usr/local/bin/testnode-sequencer-entrypoint"]
     command:
       - --conf.file=/config/l2-nodeConfig.json
@@ -92,6 +92,9 @@ services:
     volumes:
       - ../config:/config
       - tokenbridge-data:/tokenbridge-data
+
+  timeboost-redis:
+    image: redis:7-alpine
 
   tokenbridge:
     image: nitro-testnode-tokenbridge:latest

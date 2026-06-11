@@ -121,6 +121,8 @@ describe("buildActionTestnodeState", () => {
 				"TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS",
 			]),
 		);
+		expect(args).not.toContain("redis://timeboost-redis:6379");
+		expect(args).not.toContain("redis:7-alpine");
 	});
 
 	it("defaults to v3.2 when contractsVersion is not provided", () => {

@@ -257,7 +257,7 @@ async function fundL2OwnerForContractDeployments(): Promise<void> {
 	for (const rpcUrl of [L1_RPC, L2_RPC]) {
 		console.log(`[init] Funding l2owner on ${rpcUrl} with ${L2_OWNER_DEPLOYER_FUNDING_WEI} wei`);
 		const client = walletClient(rpcUrl, accounts.funnel.privateKey);
-		
+
 		await client.sendTransaction({
 			account: funnelAccount,
 			to: accounts.l2owner.address,
@@ -400,6 +400,7 @@ function createL2RuntimeSteps(runtime: InitRuntime): Record<string, StepRunner> 
 			if (!auctionData?.["auctionContract"]) {
 				throw new Error("Missing Timeboost auction deployment data");
 			}
+			composeUp(["timeboost-redis"], runtime.dockerOpts);
 			composeRestart(["sequencer"], runtime.dockerOpts);
 			return markStepDone(state, "restart-l2-timeboost", {
 				auctionContract: auctionData["auctionContract"],
