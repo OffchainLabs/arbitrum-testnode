@@ -80,7 +80,7 @@ The action starts a fully initialized testnode and exports environment variables
 | `ARBITRUM_TESTNODE_CONFIG_DIR` | Directory with all exported config files |
 | `ARBITRUM_TESTNODE_VARIANT` | Resolved variant name, such as `l3-eth` |
 
-Snapshots built by `init --timeboost-enabled` deploy a local Timeboost `ExpressLaneAuction` contract on L2 and write its proxy address to `timeboost-auction.json`. When `timeboost-enabled` / `timeboostEnabled` is true, the action and `start` command resolve the L2-only `l2-timeboost` image tag, for example `ghcr.io/offchainlabs/arbitrum-testnode-ci:v0.2.2-nc3.2-l2-timeboost`. The published image uses the deployed address by default; `TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS` can still override it. Timeboost requires an external Redis endpoint supplied through `TESTNODE_TIMEBOOST_REDIS_URL`; the testnode does not provision Redis.
+Snapshots built by `init --timeboost-enabled` deploy a local Timeboost `ExpressLaneAuction` contract on L2 and write its proxy address to `timeboost-auction.json`. The snapshot build starts a local compose Redis service only while building the snapshot. When `timeboost-enabled` / `timeboostEnabled` is true, the action and `start` command resolve the L2-only `l2-timeboost` image tag, for example `ghcr.io/offchainlabs/arbitrum-testnode-ci:v0.2.2-nc3.2-l2-timeboost`. The published image uses the deployed address by default; `TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS` can still override it. Published Timeboost stacks require an external Redis endpoint supplied through `TESTNODE_TIMEBOOST_REDIS_URL`; `start` and the action do not deploy Redis.
 
 ### Local Development
 

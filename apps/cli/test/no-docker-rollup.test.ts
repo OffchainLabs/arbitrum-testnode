@@ -11,6 +11,10 @@ describe("init chain steps deploy rollups through a local RollupCreator", () => 
 		resolve(import.meta.dirname, "../../../packages/core/src/sdk-chain.ts"),
 		"utf-8",
 	);
+	const composeSource = readFileSync(
+		resolve(import.meta.dirname, "../../../docker/docker-compose.yaml"),
+		"utf-8",
+	);
 
 	it("uses Docker only to provision the RollupCreator contracts", () => {
 		expect(initSource).toContain("deployRollupCreatorViaDocker");
@@ -29,7 +33,11 @@ describe("init chain steps deploy rollups through a local RollupCreator", () => 
 		expect(initSource).toContain('"deploy-timeboost-auction"');
 		expect(initSource).toContain('"restart-l2-timeboost"');
 		expect(initSource).toContain("TIMEBOOST_AUCTION_OUTPUT=/config/timeboost-auction.json");
-		expect(initSource).not.toContain('composeUp(["redis"');
+		expect(initSource).toContain('composeUp(["timeboost-redis"]');
+		expect(composeSource).toContain("timeboost-redis:");
+		expect(composeSource).toContain(
+			"TESTNODE_TIMEBOOST_REDIS_URL=${TESTNODE_TIMEBOOST_REDIS_URL:-redis://timeboost-redis:6379}",
+		);
 	});
 
 	it("records the deployed RollupCreator address in deployment artifacts", () => {
