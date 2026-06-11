@@ -80,7 +80,7 @@ The action starts a fully initialized testnode and exports environment variables
 | `ARBITRUM_TESTNODE_CONFIG_DIR` | Directory with all exported config files |
 | `ARBITRUM_TESTNODE_VARIANT` | Resolved variant name, such as `l3-eth` |
 
-Timeboost does not provision Redis or deploy the auction contract. When `timeboost-enabled` / `timeboostEnabled` is true, set `TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS` to the deployed auction contract address. The image defaults Redis to `redis://redis:6379`; override it with `TESTNODE_TIMEBOOST_REDIS_URL` when needed.
+Snapshots built by `init --timeboost-enabled` deploy a local Timeboost `ExpressLaneAuction` contract on L2 and write its proxy address to `timeboost-auction.json`. When `timeboost-enabled` / `timeboostEnabled` is true, the published image uses that deployed address by default; `TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS` can still override it. Timeboost requires an external Redis endpoint supplied through `TESTNODE_TIMEBOOST_REDIS_URL`; the testnode does not provision Redis.
 
 ### Local Development
 
@@ -160,6 +160,8 @@ The `init` command runs 14 steps to deploy a complete L1 + L2 + L3 stack:
 | 12 | `wait-l3` | Wait for L3 RPC readiness |
 | 13 | `deposit-eth-to-l3` | Bridge ETH from L2 to L3 via inbox |
 | 14 | `deploy-l3-token-bridge` | Deploy L2-L3 token bridge contracts |
+
+When `init --timeboost-enabled` is set, three Timeboost steps are inserted after `wait-l2`: `deploy-timeboost-auction`, `restart-l2-timeboost`, and `wait-l2-timeboost`.
 
 State is persisted to `config/state.json` after each step, enabling automatic resume on failure.
 

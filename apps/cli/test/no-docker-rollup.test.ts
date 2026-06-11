@@ -24,6 +24,14 @@ describe("init chain steps deploy rollups through a local RollupCreator", () => 
 		expect(initSource).toContain("stakeToken: rollupCreatorDeployment.stakeToken");
 	});
 
+	it("deploys the Timeboost auction after L2 is available", () => {
+		expect(initSource).toContain("deployTimeboostAuctionViaDocker");
+		expect(initSource).toContain('"deploy-timeboost-auction"');
+		expect(initSource).toContain('"restart-l2-timeboost"');
+		expect(initSource).toContain("TIMEBOOST_AUCTION_OUTPUT=/config/timeboost-auction.json");
+		expect(initSource).not.toContain('composeUp(["redis"');
+	});
+
 	it("records the deployed RollupCreator address in deployment artifacts", () => {
 		expect(sdkSource).toContain('"rollup-creator"');
 	});

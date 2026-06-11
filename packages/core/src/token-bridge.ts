@@ -48,7 +48,6 @@ const PORTAL_LOCAL_NETWORK_PATH =
 		"../../../../arbitrum-portal/packages/arb-token-bridge-ui/src/util/networksNitroTestnode.generated.json",
 	);
 const FUNDING_RESERVE_WEI = 1n * 10n ** 18n;
-const TOKENBRIDGE_DEPLOYER_TARGET_L1_WEI = 100n * 10n ** 18n;
 const TOKENBRIDGE_DEPLOYER_TARGET_L2_WEI = 100n * 10n ** 18n;
 const TOKENBRIDGE_DEPLOYER_TARGET_L3_WEI = 10n * 10n ** 18n;
 const TOKEN_BRIDGE_TX_GAS_LIMIT = 6_000_000n;
@@ -529,26 +528,6 @@ async function setL3ChainOwners(l3RpcUrl: string, upgradeExecutorAddress: Addres
 		functionName: "removeChainOwner",
 		args: [accounts.l3owner.address],
 	});
-}
-
-export async function ensureL1L2TokenBridgeFunding(
-	l1RpcUrl: string,
-	l2RpcUrl: string,
-): Promise<void> {
-	await topUpIfNeeded(
-		accounts.l2owner.address,
-		TOKENBRIDGE_DEPLOYER_TARGET_L1_WEI,
-		l1RpcUrl,
-		accounts.funnel.privateKey,
-		"l2owner tokenbridge deployer on L1",
-	);
-	await topUpIfNeeded(
-		accounts.l2owner.address,
-		TOKENBRIDGE_DEPLOYER_TARGET_L2_WEI,
-		l2RpcUrl,
-		accounts.funnel.privateKey,
-		"l2owner tokenbridge deployer on L2",
-	);
 }
 
 export async function ensureL2L3TokenBridgeFunding(
