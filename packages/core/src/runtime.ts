@@ -96,6 +96,7 @@ tick();
 export async function startNitroFromSnapshot(
 	options: RuntimeOptions,
 	rpcs: RuntimeRpcs,
+	startOptions?: { l3Enabled?: boolean | undefined },
 ): Promise<void> {
 	const l2Result = composeUp(["sequencer", "validator"], {
 		composeFile: options.composeFile,
@@ -105,6 +106,10 @@ export async function startNitroFromSnapshot(
 		throw new Error(l2Result.stderr.trim() || "failed to start L2 services");
 	}
 	await waitForRpc(rpcs.l2);
+
+	if (startOptions?.l3Enabled === false) {
+		return;
+	}
 
 	const l3Result = composeUp(["l3node"], {
 		composeFile: options.composeFile,

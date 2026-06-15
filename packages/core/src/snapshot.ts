@@ -43,23 +43,39 @@ export interface SnapshotManifest {
 const CRITICAL_CONFIG_FILES = [
 	"state.json",
 	"l2-nodeConfig.json",
-	"l3-nodeConfig.json",
 	"l2_chain_info.json",
-	"l3_chain_info.json",
 	"l2_deployment.json",
-	"l3_deployment.json",
 	"l1-l2-chain-config.json",
-	"l2-l3-chain-config.json",
 	"localNetwork.json",
 	"l1-l2-admin/bridgeUiConfig.json",
+] as const;
+
+const L3_CONFIG_FILES = [
+	"l3-nodeConfig.json",
+	"l3_chain_info.json",
+	"l3_deployment.json",
+	"l2-l3-chain-config.json",
 	"l2-l3-admin/bridgeUiConfig.json",
 ] as const;
 
 const SNAPSHOT_VOLUME_ARCHIVES = [
 	{ volumeName: "arbitrum-testnode_sequencer-data", archiveName: "sequencer-data.tar" },
 	{ volumeName: "arbitrum-testnode_validator-data", archiveName: "validator-data.tar" },
+] as const;
+
+const L3_VOLUME_ARCHIVES = [
 	{ volumeName: "arbitrum-testnode_l3node-data", archiveName: "l3node-data.tar" },
 ] as const;
+
+function volumeNameForArchive(archiveName: string): string {
+	if (archiveName === "volumes/l3node-data.tar") {
+		return "arbitrum-testnode_l3node-data";
+	}
+	if (archiveName === "volumes/validator-data.tar") {
+		return "arbitrum-testnode_validator-data";
+	}
+	return "arbitrum-testnode_sequencer-data";
+}
 
 function ensureDirectory(path: string): void {
 	mkdirSync(path, { recursive: true });
@@ -117,8 +133,8 @@ export function readNitroNodeImage(composeFile: string): string {
 	return image;
 }
 
-function assertRequiredConfigFiles(configDir: string): void {
-	for (const filename of CRITICAL_CONFIG_FILES) {
+function assertRequiredConfigFiles(configDir: string, l3Enabled = true): void {
+	for (const filename of [...CRITICAL_CONFIG_FILES, ...(l3Enabled ? L3_CONFIG_FILES : [])]) {
 		const fullPath = join(configDir, filename);
 		if (!existsSync(fullPath)) {
 			throw new Error(`Snapshot source missing required file: ${fullPath}`);
@@ -223,14 +239,20 @@ export function buildSnapshotManifest(
 	configDir: string,
 	composeFile: string,
 	snapshotId = DEFAULT_SNAPSHOT_ID,
+	options?: { l3Enabled?: boolean | undefined },
 ): SnapshotManifest {
-	assertRequiredConfigFiles(configDir);
+	const l3Enabled = options?.l3Enabled ?? true;
+	assertRequiredConfigFiles(configDir, l3Enabled);
 
 	const l2Deployment = parseDeploymentFile(configDir, "l2");
-	const l3Deployment = parseDeploymentFile(configDir, "l3");
+	const l3Deployment = l3Enabled ? parseDeploymentFile(configDir, "l3") : undefined;
 	const configChecksums = Object.fromEntries(
-		CRITICAL_CONFIG_FILES.map((filename) => [filename, sha256File(join(configDir, filename))]),
+		[...CRITICAL_CONFIG_FILES, ...(l3Enabled ? L3_CONFIG_FILES : [])].map((filename) => [
+			filename,
+			sha256File(join(configDir, filename)),
+		]),
 	);
+	const volumeArchives = [...SNAPSHOT_VOLUME_ARCHIVES, ...(l3Enabled ? L3_VOLUME_ARCHIVES : [])];
 
 	return {
 		version: SNAPSHOT_VERSION,
@@ -240,18 +262,18 @@ export function buildSnapshotManifest(
 		chainIds: {
 			l1: 1337,
 			l2: 412346,
-			l3: 333333,
+			l3: l3Enabled ? 333333 : 0,
 		},
 		rollups: {
 			l2: l2Deployment.rollup,
-			l3: l3Deployment.rollup,
+			l3: l3Deployment?.rollup ?? "",
 		},
 		requiredFiles: [
-			...CRITICAL_CONFIG_FILES.map((file) => join("config", file)),
+			...Object.keys(configChecksums).map((file) => join("config", file)),
 			ANVIL_STATE_DIRNAME,
 		],
 		configChecksums,
-		volumeArchives: SNAPSHOT_VOLUME_ARCHIVES.map(({ archiveName }) => join("volumes", archiveName)),
+		volumeArchives: volumeArchives.map(({ archiveName }) => join("volumes", archiveName)),
 	};
 }
 
@@ -293,8 +315,10 @@ export function captureSnapshot(
 	configDir: string,
 	composeFile: string,
 	snapshotId = DEFAULT_SNAPSHOT_ID,
+	options?: { l3Enabled?: boolean | undefined },
 ): SnapshotManifest {
-	assertRequiredConfigFiles(configDir);
+	const l3Enabled = options?.l3Enabled ?? true;
+	assertRequiredConfigFiles(configDir, l3Enabled);
 	const snapshotDir = getSnapshotDir(configDir, snapshotId);
 	const snapshotConfigDir = getSnapshotConfigDir(configDir, snapshotId);
 	const snapshotAnvilStateDir = getSnapshotAnvilStateDir(configDir, snapshotId);
@@ -305,11 +329,14 @@ export function captureSnapshot(
 	copyDirectoryContents(configDir, snapshotConfigDir);
 	copyPath(getAnvilStateDir(configDir), snapshotAnvilStateDir);
 
-	for (const { volumeName, archiveName } of SNAPSHOT_VOLUME_ARCHIVES) {
+	for (const { volumeName, archiveName } of [
+		...SNAPSHOT_VOLUME_ARCHIVES,
+		...(l3Enabled ? L3_VOLUME_ARCHIVES : []),
+	]) {
 		exportDockerVolume(volumeName, join(snapshotVolumesDir, archiveName));
 	}
 
-	const manifest = buildSnapshotManifest(configDir, composeFile, snapshotId);
+	const manifest = buildSnapshotManifest(configDir, composeFile, snapshotId, { l3Enabled });
 	writeFileSync(
 		getSnapshotManifestPath(configDir, snapshotId),
 		`${JSON.stringify(manifest, null, 2)}\n`,
@@ -330,9 +357,10 @@ export function restoreSnapshot(
 	copyDirectoryContents(snapshotConfigDir, configDir);
 	copyPath(snapshotAnvilStateDir, getAnvilStateDir(configDir));
 
-	for (const { volumeName, archiveName } of SNAPSHOT_VOLUME_ARCHIVES) {
-		execOrThrow("docker", ["volume", "rm", "-f", volumeName]);
-		importDockerVolume(volumeName, join(getSnapshotVolumesDir(configDir, snapshotId), archiveName));
+	for (const archiveName of manifest.volumeArchives) {
+		const volume = volumeNameForArchive(archiveName);
+		execOrThrow("docker", ["volume", "rm", "-f", volume]);
+		importDockerVolume(volume, join(getSnapshotDir(configDir, snapshotId), archiveName));
 	}
 
 	return manifest;
@@ -365,6 +393,44 @@ async function readAddress(contract: Address, arg: Address, rpcUrl: string): Pro
 	return result as string;
 }
 
+type SnapshotSemanticCheck = {
+	label: string;
+	contract: string;
+	expected: string;
+	token: string;
+	rpcUrl: string;
+};
+
+type TokenBridgeNetwork = {
+	tokenBridge: {
+		parentGatewayRouter: string;
+		parentWeth: string;
+		parentWethGateway: string;
+		childGatewayRouter: string;
+		childWethGateway: string;
+	};
+};
+
+function readSemanticNetworks(
+	configDir: string,
+	l3Enabled: boolean,
+): { l2Network: TokenBridgeNetwork; l3Network?: TokenBridgeNetwork | undefined } {
+	const localNetworks = JSON.parse(readFileSync(join(configDir, "localNetwork.json"), "utf-8")) as {
+		l2Network?: TokenBridgeNetwork;
+		l3Network?: TokenBridgeNetwork;
+	};
+	const l2Network = localNetworks.l2Network;
+	const l3Network = localNetworks.l3Network;
+	if (!l2Network || (l3Enabled && !l3Network)) {
+		throw new Error(
+			l3Enabled
+				? "Snapshot semantic verification requires l2Network and l3Network"
+				: "Snapshot semantic verification requires l2Network",
+		);
+	}
+	return { l2Network, l3Network };
+}
+
 export async function verifySnapshotSemanticState(
 	configDir: string,
 	rpcUrls: {
@@ -372,35 +438,12 @@ export async function verifySnapshotSemanticState(
 		l2: string;
 		l3: string;
 	},
+	options?: { l3Enabled?: boolean | undefined },
 ): Promise<void> {
-	const localNetworks = JSON.parse(readFileSync(join(configDir, "localNetwork.json"), "utf-8")) as {
-		l2Network?: {
-			tokenBridge: {
-				parentGatewayRouter: string;
-				parentWeth: string;
-				parentWethGateway: string;
-				childGatewayRouter: string;
-				childWethGateway: string;
-			};
-		};
-		l3Network?: {
-			tokenBridge: {
-				parentGatewayRouter: string;
-				parentWeth: string;
-				parentWethGateway: string;
-				childGatewayRouter: string;
-				childWethGateway: string;
-			};
-		};
-	};
+	const l3Enabled = options?.l3Enabled ?? true;
+	const { l2Network, l3Network } = readSemanticNetworks(configDir, l3Enabled);
 
-	const l2Network = localNetworks.l2Network;
-	const l3Network = localNetworks.l3Network;
-	if (!l2Network || !l3Network) {
-		throw new Error("Snapshot semantic verification requires l2Network and l3Network");
-	}
-
-	const checks = [
+	const checks: SnapshotSemanticCheck[] = [
 		{
 			label: "L1->L2 parent WETH gateway",
 			contract: l2Network.tokenBridge.parentGatewayRouter,
@@ -415,21 +458,25 @@ export async function verifySnapshotSemanticState(
 			token: l2Network.tokenBridge.parentWeth,
 			rpcUrl: rpcUrls.l2,
 		},
-		{
-			label: "L2->L3 parent WETH gateway",
-			contract: l3Network.tokenBridge.parentGatewayRouter,
-			expected: l3Network.tokenBridge.parentWethGateway,
-			token: l3Network.tokenBridge.parentWeth,
-			rpcUrl: rpcUrls.l2,
-		},
-		{
-			label: "L2->L3 child WETH gateway",
-			contract: l3Network.tokenBridge.childGatewayRouter,
-			expected: l3Network.tokenBridge.childWethGateway,
-			token: l3Network.tokenBridge.parentWeth,
-			rpcUrl: rpcUrls.l3,
-		},
-	] as const;
+	];
+	if (l3Enabled && l3Network) {
+		checks.push(
+			{
+				label: "L2->L3 parent WETH gateway",
+				contract: l3Network.tokenBridge.parentGatewayRouter,
+				expected: l3Network.tokenBridge.parentWethGateway,
+				token: l3Network.tokenBridge.parentWeth,
+				rpcUrl: rpcUrls.l2,
+			},
+			{
+				label: "L2->L3 child WETH gateway",
+				contract: l3Network.tokenBridge.childGatewayRouter,
+				expected: l3Network.tokenBridge.childWethGateway,
+				token: l3Network.tokenBridge.parentWeth,
+				rpcUrl: rpcUrls.l3,
+			},
+		);
+	}
 
 	for (const check of checks) {
 		const actual = await readAddress(

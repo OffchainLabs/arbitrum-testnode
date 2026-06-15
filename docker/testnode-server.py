@@ -14,7 +14,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-EXPORT_CONFIG_DIR = Path("/opt/arbitrum-testnode/export-config")
+EXPORT_CONFIG_DIR = Path(os.environ.get("TESTNODE_EXPORT_CONFIG_DIR", "/opt/arbitrum-testnode/export-config"))
 VARIANT = os.environ.get("TESTNODE_VARIANT", "l2")
 RPC_BODY = json.dumps({"id": 1, "jsonrpc": "2.0", "method": "eth_chainId", "params": []}).encode()
 
@@ -22,7 +22,7 @@ ENDPOINTS = {
     "l1": "http://127.0.0.1:8545",
     "l2": "http://127.0.0.1:8547",
 }
-if VARIANT != "l2":
+if VARIANT not in ("l2", "l2-timeboost"):
     ENDPOINTS["l3"] = "http://127.0.0.1:8549"
 
 

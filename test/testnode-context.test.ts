@@ -18,8 +18,8 @@ function writeTarFixture(sourceDir: string, archivePath: string, marker: string)
 	execFileSync("tar", ["-cf", archivePath, "-C", sourceDir, "."]);
 }
 
-function createSnapshotFixture(rootDir: string): string {
-	const snapshotDir = join(rootDir, "snapshots", "default");
+function createSnapshotFixture(rootDir: string, snapshotId = "default"): string {
+	const snapshotDir = join(rootDir, "config", "snapshots", snapshotId);
 	const configDir = join(snapshotDir, "config");
 	const volumeDir = join(snapshotDir, "volumes");
 
@@ -83,10 +83,16 @@ describe("prepare-testnode-context", () => {
 				resolve("scripts/ci/prepare-testnode-context.mjs"),
 				"--variant",
 				"l3-eth",
+				"--snapshot-id",
+				"default",
 				"--snapshot-dir",
 				snapshotDir,
 				"--output-dir",
 				outputDir,
+				"--nitro-contracts-version",
+				"v3.2",
+				"--testnode-name",
+				"fast",
 			],
 			{ cwd: resolve("."), stdio: "pipe" },
 		);
@@ -104,35 +110,74 @@ describe("prepare-testnode-context", () => {
 		const metadata = JSON.parse(readFileSync(join(outputDir, "metadata.json"), "utf-8"));
 		expect(metadata).toEqual({
 			l3Enabled: true,
-			nitroContractsVersion: "",
+			nitroContractsVersion: "v3.2",
 			snapshotId: "default",
-			testnodeName: "",
+			testnodeName: "fast",
 			variant: "l3-eth",
 		});
 	});
 
-	it("echoes the testnode name into metadata when provided", () => {
+	it("prepares named bundle contexts from configured snapshots", () => {
 		const rootDir = createTempDir();
-		const snapshotDir = createSnapshotFixture(rootDir);
-		const outputDir = join(rootDir, "context");
-
-		execFileSync(
-			"node",
-			[
-				resolve("scripts/ci/prepare-testnode-context.mjs"),
-				"--variant",
-				"l3-eth",
-				"--snapshot-dir",
-				snapshotDir,
-				"--output-dir",
-				outputDir,
-				"--testnode-name",
-				"fast",
-			],
-			{ cwd: resolve("."), stdio: "pipe" },
+		createSnapshotFixture(rootDir, "default");
+		createSnapshotFixture(rootDir, "l2");
+		writeFileSync(
+			join(rootDir, "config", "testnodes.json"),
+			JSON.stringify(
+				{
+					testnodes: {
+						default: {
+							variant: "l3-eth",
+							snapshotId: "default",
+							nitroContractsVersion: "v3.2",
+						},
+						l2: {
+							variant: "l2",
+							snapshotId: "l2",
+							nitroContractsVersion: "v3.2",
+						},
+					},
+				},
+				null,
+				2,
+			),
 		);
 
-		const metadata = JSON.parse(readFileSync(join(outputDir, "metadata.json"), "utf-8"));
-		expect(metadata.testnodeName).toBe("fast");
+		execFileSync("node", [resolve("scripts/ci/prepare-testnode-bundle-context.mjs")], {
+			cwd: rootDir,
+			stdio: "pipe",
+		});
+
+		const rootMetadata = JSON.parse(
+			readFileSync(join(rootDir, ".testnode-context", "metadata.json"), "utf-8"),
+		);
+		expect(rootMetadata).toEqual({
+			bundled: true,
+			defaultTestnodeName: "default",
+		});
+		const defaultMetadata = JSON.parse(
+			readFileSync(
+				join(rootDir, ".testnode-context", "testnodes", "default", "metadata.json"),
+				"utf-8",
+			),
+		);
+		expect(defaultMetadata).toMatchObject({
+			l3Enabled: true,
+			snapshotId: "default",
+			testnodeName: "default",
+			variant: "l3-eth",
+		});
+		const l2Metadata = JSON.parse(
+			readFileSync(join(rootDir, ".testnode-context", "testnodes", "l2", "metadata.json"), "utf-8"),
+		);
+		expect(l2Metadata).toMatchObject({
+			l3Enabled: false,
+			snapshotId: "l2",
+			testnodeName: "l2",
+			variant: "l2",
+		});
+		expect(
+			existsSync(join(rootDir, ".testnode-context", "testnodes", "l2", "runtime", "l3node")),
+		).toBe(false);
 	});
 });

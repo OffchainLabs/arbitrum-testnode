@@ -9,12 +9,9 @@ COPY --from=foundry /usr/local/bin/anvil /usr/local/bin/anvil
 COPY --chmod=755 docker/testnode-entrypoint.sh /usr/local/bin/arbitrum-testnode
 COPY --chmod=755 docker/testnode-healthcheck.sh /usr/local/bin/healthcheck.sh
 COPY docker/testnode-server.py /usr/local/bin/config-server.py
-COPY .testnode-context/export-config /opt/arbitrum-testnode/export-config
-COPY .testnode-context/metadata.json /opt/arbitrum-testnode/metadata.json
-COPY .testnode-context/runtime /opt/arbitrum-testnode/runtime
-COPY .testnode-context/runtime-config /opt/arbitrum-testnode/runtime-config
+COPY .testnode-context /opt/arbitrum-testnode
 USER root
-RUN chown -R user:user /opt/arbitrum-testnode/runtime /opt/arbitrum-testnode/runtime-config
+RUN chown -R user:user /opt/arbitrum-testnode
 RUN mkdir -p /tokenbridge-data && chown user:user /tokenbridge-data
 USER user
 

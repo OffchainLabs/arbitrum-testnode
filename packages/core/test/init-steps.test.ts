@@ -15,7 +15,9 @@ import {
 
 describe("init step orchestration", () => {
 	const defaultSteps = getInitSteps();
+	const l2Steps = getInitSteps({ l3Enabled: false });
 	const timeboostSteps = getInitSteps({ timeboostEnabled: true });
+	const l2TimeboostSteps = getInitSteps({ l3Enabled: false, timeboostEnabled: true });
 
 	describe("step order", () => {
 		it("has exactly 15 default entries", () => {
@@ -24,6 +26,37 @@ describe("init step orchestration", () => {
 
 		it("has exactly 18 entries when Timeboost is enabled", () => {
 			expect(timeboostSteps).toHaveLength(18);
+		});
+
+		it("omits L3 steps when L3 is disabled", () => {
+			expect(l2Steps).toEqual([
+				"start-l1",
+				"wait-l1",
+				"deploy-l2-rollup",
+				"generate-l2-config",
+				"start-l2",
+				"wait-l2",
+				"deposit-eth-to-l2",
+				"fund-l2owner",
+				"deploy-l2-token-bridge",
+			]);
+		});
+
+		it("keeps Timeboost in the L2-only step list", () => {
+			expect(l2TimeboostSteps).toEqual([
+				"start-l1",
+				"wait-l1",
+				"deploy-l2-rollup",
+				"generate-l2-config",
+				"start-l2",
+				"wait-l2",
+				"deposit-eth-to-l2",
+				"fund-l2owner",
+				"deploy-timeboost-auction",
+				"restart-l2-timeboost",
+				"wait-l2-timeboost",
+				"deploy-l2-token-bridge",
+			]);
 		});
 
 		it("starts with L1 boot and ends with L3 token bridge by default", () => {

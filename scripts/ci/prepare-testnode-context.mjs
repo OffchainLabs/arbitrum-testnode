@@ -10,6 +10,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { VARIANTS } from "../../packages/testnode/src/runtime.mjs";
 
 function readArg(name) {
@@ -50,58 +51,97 @@ function extractArchive(archivePath, destination) {
 	execFileSync("tar", ["-xf", archivePath, "-C", destination]);
 }
 
-const variant = readArg("--variant");
-if (!variant) {
-	throw new Error("Missing required argument --variant");
+export function prepareTestnodeContext({
+	containerConfigRoot,
+	nitroContractsVersion = "",
+	outputDir,
+	snapshotDir,
+	snapshotId,
+	testnodeName = "",
+	variant,
+}) {
+	if (!variant) {
+		throw new Error("Missing required argument --variant");
+	}
+	if (!snapshotId) {
+		throw new Error("Missing required argument --snapshot-id");
+	}
+	if (!outputDir) {
+		throw new Error("Missing required outputDir");
+	}
+	if (!containerConfigRoot) {
+		throw new Error("Missing required containerConfigRoot");
+	}
+	const definition = VARIANTS[variant];
+	if (!definition) {
+		throw new Error(`Unknown variant ${variant}`);
+	}
+	const resolvedSnapshotDir = resolve(snapshotDir || join("config", "snapshots", snapshotId));
+
+	if (!existsSync(resolvedSnapshotDir)) {
+		throw new Error(`Snapshot directory not found: ${resolvedSnapshotDir}`);
+	}
+
+	const runtimeConfigDir = join(outputDir, "runtime-config");
+	const exportConfigDir = join(outputDir, "export-config");
+	const runtimeDir = join(outputDir, "runtime");
+	const volumeDir = join(resolvedSnapshotDir, "volumes");
+
+	rmSync(outputDir, { force: true, recursive: true });
+	mkdirSync(outputDir, { recursive: true });
+	cpSync(join(resolvedSnapshotDir, "config"), runtimeConfigDir, { recursive: true });
+	cpSync(join(resolvedSnapshotDir, "config"), exportConfigDir, { recursive: true });
+	cpSync(join(resolvedSnapshotDir, "anvil-state"), join(runtimeDir, "anvil-state"), {
+		recursive: true,
+	});
+
+	extractArchive(join(volumeDir, "sequencer-data.tar"), join(runtimeDir, "sequencer", ".arbitrum"));
+	extractArchive(join(volumeDir, "validator-data.tar"), join(runtimeDir, "validator", ".arbitrum"));
+	if (definition.l3Enabled) {
+		extractArchive(join(volumeDir, "l3node-data.tar"), join(runtimeDir, "l3node", ".arbitrum"));
+	}
+
+	rewriteTree(runtimeConfigDir, [
+		["http://host.docker.internal:8545", "http://127.0.0.1:8545"],
+		["http://host.docker.internal:8547", "http://127.0.0.1:8547"],
+		["http://sequencer:8547", "http://127.0.0.1:8547"],
+		["http://l3node:8547", "http://127.0.0.1:8549"],
+		["/config/", containerConfigRoot],
+	]);
+	rewriteTree(exportConfigDir, [
+		["http://host.docker.internal:8545", "http://127.0.0.1:8545"],
+		["http://host.docker.internal:8547", "http://127.0.0.1:8547"],
+		["http://sequencer:8547", "http://127.0.0.1:8547"],
+		["http://l3node:8547", "http://127.0.0.1:3347"],
+		["http://127.0.0.1:8549", "http://127.0.0.1:3347"],
+	]);
+
+	const metadata = {
+		l3Enabled: definition.l3Enabled,
+		nitroContractsVersion,
+		snapshotId,
+		testnodeName,
+		variant,
+	};
+	writeFileSync(join(outputDir, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`);
+
+	return metadata;
 }
-const definition = VARIANTS[variant];
-if (!definition) {
-	throw new Error(`Unknown variant ${variant}`);
+
+function main() {
+	const variant = readArg("--variant");
+	const snapshotId = readArg("--snapshot-id");
+	prepareTestnodeContext({
+		containerConfigRoot: "/opt/arbitrum-testnode/runtime-config/",
+		nitroContractsVersion: readArg("--nitro-contracts-version") || "",
+		outputDir: resolve(readArg("--output-dir") || ".testnode-context"),
+		snapshotDir: readArg("--snapshot-dir") || "",
+		snapshotId,
+		testnodeName: readArg("--testnode-name") || "",
+		variant,
+	});
 }
 
-const contractsVersion = readArg("--nitro-contracts-version") || "";
-const testnodeName = readArg("--testnode-name") || "";
-const snapshotId = readArg("--snapshot-id") || definition.snapshotId;
-const snapshotDir = resolve(readArg("--snapshot-dir") || join("config", "snapshots", snapshotId));
-const outputDir = resolve(readArg("--output-dir") || ".testnode-context");
-
-if (!existsSync(snapshotDir)) {
-	throw new Error(`Snapshot directory not found: ${snapshotDir}`);
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+	main();
 }
-
-const runtimeConfigDir = join(outputDir, "runtime-config");
-const exportConfigDir = join(outputDir, "export-config");
-const runtimeDir = join(outputDir, "runtime");
-const volumeDir = join(snapshotDir, "volumes");
-
-rmSync(outputDir, { force: true, recursive: true });
-mkdirSync(outputDir, { recursive: true });
-cpSync(join(snapshotDir, "config"), runtimeConfigDir, { recursive: true });
-cpSync(join(snapshotDir, "config"), exportConfigDir, { recursive: true });
-cpSync(join(snapshotDir, "anvil-state"), join(runtimeDir, "anvil-state"), { recursive: true });
-
-extractArchive(join(volumeDir, "sequencer-data.tar"), join(runtimeDir, "sequencer", ".arbitrum"));
-extractArchive(join(volumeDir, "validator-data.tar"), join(runtimeDir, "validator", ".arbitrum"));
-if (definition.l3Enabled) {
-	extractArchive(join(volumeDir, "l3node-data.tar"), join(runtimeDir, "l3node", ".arbitrum"));
-}
-
-rewriteTree(runtimeConfigDir, [
-	["http://host.docker.internal:8545", "http://127.0.0.1:8545"],
-	["http://host.docker.internal:8547", "http://127.0.0.1:8547"],
-	["http://sequencer:8547", "http://127.0.0.1:8547"],
-	["http://l3node:8547", "http://127.0.0.1:8549"],
-	["/config/", "/opt/arbitrum-testnode/runtime-config/"],
-]);
-rewriteTree(exportConfigDir, [
-	["http://host.docker.internal:8545", "http://127.0.0.1:8545"],
-	["http://host.docker.internal:8547", "http://127.0.0.1:8547"],
-	["http://sequencer:8547", "http://127.0.0.1:8547"],
-	["http://l3node:8547", "http://127.0.0.1:3347"],
-	["http://127.0.0.1:8549", "http://127.0.0.1:3347"],
-]);
-
-writeFileSync(
-	join(outputDir, "metadata.json"),
-	`${JSON.stringify({ l3Enabled: definition.l3Enabled, nitroContractsVersion: contractsVersion, snapshotId, testnodeName, variant }, null, 2)}\n`,
-);

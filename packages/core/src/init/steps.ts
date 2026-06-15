@@ -16,6 +16,9 @@ export const BASE_INIT_STEPS = [
 	"deploy-l3-token-bridge",
 ] as const;
 
+export const L2_INIT_STEPS = BASE_INIT_STEPS.slice(0, BASE_INIT_STEPS.indexOf("deploy-l3-rollup"));
+export const L3_INIT_STEPS = BASE_INIT_STEPS.slice(BASE_INIT_STEPS.indexOf("deploy-l3-rollup"));
+
 export const TIMEBOOST_INIT_STEPS = [
 	"deploy-timeboost-auction",
 	"restart-l2-timeboost",
@@ -23,16 +26,22 @@ export const TIMEBOOST_INIT_STEPS = [
 ] as const;
 
 export const INIT_STEPS = [
-	...BASE_INIT_STEPS.slice(0, 8),
+	...L2_INIT_STEPS.slice(0, L2_INIT_STEPS.indexOf("deploy-l2-token-bridge")),
 	...TIMEBOOST_INIT_STEPS,
-	...BASE_INIT_STEPS.slice(8),
+	...L2_INIT_STEPS.slice(L2_INIT_STEPS.indexOf("deploy-l2-token-bridge")),
+	...L3_INIT_STEPS,
 ] as const;
 
-export function getInitSteps(options?: { timeboostEnabled?: boolean | undefined }): string[] {
+export function getInitSteps(options?: {
+	l3Enabled?: boolean | undefined;
+	timeboostEnabled?: boolean | undefined;
+}): string[] {
+	const l3Enabled = options?.l3Enabled ?? true;
 	if (!options?.timeboostEnabled) {
-		return [...BASE_INIT_STEPS];
+		return l3Enabled ? [...BASE_INIT_STEPS] : [...L2_INIT_STEPS];
 	}
-	return [...INIT_STEPS];
+	const l3StepNames = new Set<string>(L3_INIT_STEPS);
+	return l3Enabled ? [...INIT_STEPS] : [...INIT_STEPS.filter((step) => !l3StepNames.has(step))];
 }
 
 export const INIT_STEP_NAMES = [...INIT_STEPS];

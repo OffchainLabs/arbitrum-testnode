@@ -38,6 +38,7 @@ let _anvilProcess: ChildProcess | undefined;
 async function runInitLoop(
 	runtime: InitRuntime,
 	feeTokenDecimals?: number,
+	l3Enabled?: boolean,
 	rebuild?: boolean,
 	timeboostEnabled?: boolean,
 ): Promise<{
@@ -49,7 +50,7 @@ async function runInitLoop(
 }> {
 	let state = rebuild ? createState() : (loadState(runtime.configDir) ?? createState());
 	const runners = makeStepRunners(runtime, feeTokenDecimals);
-	const steps = getInitSteps({ timeboostEnabled });
+	const steps = getInitSteps({ l3Enabled, timeboostEnabled });
 	const timings: Record<string, number> = {};
 
 	let nextStep = getNextPendingStep(state, steps);
@@ -95,7 +96,9 @@ export interface InitCommandOptions {
 	background?: boolean | undefined;
 	feeTokenDecimals?: number | undefined;
 	foreground?: boolean | undefined;
+	l3Enabled?: boolean | undefined;
 	rebuild?: boolean | undefined;
+	snapshotId?: string | undefined;
 	snapshotVersion?: string | undefined;
 	timeboostEnabled?: boolean | undefined;
 }
@@ -105,7 +108,8 @@ export async function runInitCommand(options: InitCommandOptions, context: InitC
 	const { feeTokenDecimals } = options;
 	assertValidFeeTokenDecimals(feeTokenDecimals);
 	const snapshotId =
-		feeTokenDecimals !== undefined ? `l3-custom-${feeTokenDecimals}` : DEFAULT_SNAPSHOT_ID;
+		options.snapshotId ??
+		(feeTokenDecimals !== undefined ? `l3-custom-${feeTokenDecimals}` : DEFAULT_SNAPSHOT_ID);
 
 	if (options.background && !options.foreground) {
 		return startBackgroundInit(runtime, {
@@ -128,6 +132,7 @@ async function runInitForeground(
 	runtime: InitRuntime,
 	options: {
 		foreground?: boolean | undefined;
+		l3Enabled?: boolean | undefined;
 		rebuild?: boolean | undefined;
 		snapshotVersion?: string | undefined;
 		timeboostEnabled?: boolean | undefined;
@@ -136,6 +141,7 @@ async function runInitForeground(
 	feeTokenDecimals: number | undefined,
 ) {
 	const totalStart = Date.now();
+	const l3Enabled = options.l3Enabled ?? true;
 	const hasExistingInitState = loadState(runtime.configDir) !== null;
 	await ensureSnapshotInstalledIfNeeded(
 		runtime,
@@ -148,7 +154,7 @@ async function runInitForeground(
 	const logArgs = options.foreground ? ["init", "--foreground"] : ["init"];
 
 	if (shouldRestoreSnapshot) {
-		return runSnapshotRestoreFlow(runtime, snapshotId, logArgs, totalStart);
+		return runSnapshotRestoreFlow(runtime, snapshotId, logArgs, totalStart, l3Enabled);
 	}
 
 	if (options.rebuild) {
@@ -164,6 +170,7 @@ async function runInitForeground(
 	const result = await runInitLoop(
 		runtime,
 		feeTokenDecimals,
+		l3Enabled,
 		options.rebuild,
 		options.timeboostEnabled,
 	);
@@ -174,7 +181,7 @@ async function runInitForeground(
 		return finishFailedInit(result);
 	}
 
-	return finalizeFreshInit(runtime, snapshotId, totalStart, result.steps);
+	return finalizeFreshInit(runtime, snapshotId, totalStart, result.steps, l3Enabled);
 }
 
 function finishFailedInit(result: {
@@ -253,6 +260,7 @@ async function runSnapshotRestoreFlow(
 	snapshotId: string,
 	logArgs: string[],
 	totalStart: number,
+	l3Enabled: boolean,
 ) {
 	console.log(`[init] Restoring snapshot: ${snapshotId}`);
 	stopRuntime({
@@ -271,8 +279,13 @@ async function runSnapshotRestoreFlow(
 			configDir: runtime.configDir,
 		},
 		{ l1: L1_RPC, l2: L2_RPC, l3: L3_RPC },
+		{ l3Enabled },
 	);
-	await verifySnapshotSemanticState(runtime.configDir, { l1: L1_RPC, l2: L2_RPC, l3: L3_RPC });
+	await verifySnapshotSemanticState(
+		runtime.configDir,
+		{ l1: L1_RPC, l2: L2_RPC, l3: L3_RPC },
+		{ l3Enabled },
+	);
 	const totalElapsed = Date.now() - totalStart;
 	finishActiveRun("completed", { exitCode: 0 });
 	return {
@@ -298,13 +311,16 @@ async function finalizeFreshInit(
 	snapshotId: string,
 	totalStart: number,
 	steps: string[],
+	l3Enabled: boolean,
 ) {
 	stopRuntime({
 		composeFile: runtime.composeFile,
 		projectName: "arbitrum-testnode",
 		configDir: runtime.configDir,
 	});
-	const snapshot = captureSnapshot(runtime.configDir, runtime.composeFile, snapshotId);
+	const snapshot = captureSnapshot(runtime.configDir, runtime.composeFile, snapshotId, {
+		l3Enabled,
+	});
 	_anvilProcess = startAnvilWithState(runtime.configDir);
 	await waitForRpc(L1_RPC);
 	await startNitroFromSnapshot(
@@ -314,8 +330,13 @@ async function finalizeFreshInit(
 			configDir: runtime.configDir,
 		},
 		{ l1: L1_RPC, l2: L2_RPC, l3: L3_RPC },
+		{ l3Enabled },
 	);
-	await verifySnapshotSemanticState(runtime.configDir, { l1: L1_RPC, l2: L2_RPC, l3: L3_RPC });
+	await verifySnapshotSemanticState(
+		runtime.configDir,
+		{ l1: L1_RPC, l2: L2_RPC, l3: L3_RPC },
+		{ l3Enabled },
+	);
 	const totalElapsed = Date.now() - totalStart;
 	finishActiveRun("completed", { exitCode: 0 });
 	return {

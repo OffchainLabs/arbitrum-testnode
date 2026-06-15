@@ -1,9 +1,13 @@
 #!/bin/sh
 set -eu
 
-CONFIG_ROOT="/opt/arbitrum-testnode/runtime-config"
-DATA_ROOT="/opt/arbitrum-testnode/runtime"
-VARIANT="${TESTNODE_VARIANT:-l2}"
+TESTNODE_ROOT="/opt/arbitrum-testnode"
+BUNDLE_ROOT="$TESTNODE_ROOT/testnodes"
+CONFIG_ROOT="$TESTNODE_ROOT/runtime-config"
+DATA_ROOT="$TESTNODE_ROOT/runtime"
+EXPORT_CONFIG_ROOT="$TESTNODE_ROOT/export-config"
+METADATA_PATH="$TESTNODE_ROOT/metadata.json"
+VARIANT="${TESTNODE_VARIANT:-}"
 NITRO_WASM_ROOTS="/home/user/nitro-legacy/machines,/home/user/target/machines"
 PIDS=""
 SEQUENCER_HTTP_API="net,web3,eth,txpool,debug"
@@ -43,11 +47,59 @@ read_timeboost_auction_contract_address() {
 	fi
 }
 
+select_testnode_context() {
+	if [ ! -d "$BUNDLE_ROOT" ]; then
+		return
+	fi
+
+	TESTNODE_NAME="${TESTNODE_NAME:-}"
+	if [ -z "$TESTNODE_NAME" ]; then
+		if [ -f "$METADATA_PATH" ]; then
+			TESTNODE_NAME="$(jq -r '.defaultTestnodeName // "default"' "$METADATA_PATH")"
+		else
+			TESTNODE_NAME="default"
+		fi
+	fi
+	case "$TESTNODE_NAME" in
+		*[!a-zA-Z0-9_.-]*)
+			echo "invalid TESTNODE_NAME: $TESTNODE_NAME" >&2
+			exit 1
+			;;
+	esac
+
+	TESTNODE_CONTEXT_ROOT="$BUNDLE_ROOT/$TESTNODE_NAME"
+	if [ ! -d "$TESTNODE_CONTEXT_ROOT" ]; then
+		echo "unknown TESTNODE_NAME: $TESTNODE_NAME" >&2
+		exit 1
+	fi
+
+	CONFIG_ROOT="$TESTNODE_CONTEXT_ROOT/runtime-config"
+	DATA_ROOT="$TESTNODE_CONTEXT_ROOT/runtime"
+	EXPORT_CONFIG_ROOT="$TESTNODE_CONTEXT_ROOT/export-config"
+	METADATA_PATH="$TESTNODE_CONTEXT_ROOT/metadata.json"
+}
+
+read_metadata() {
+	if [ ! -f "$METADATA_PATH" ]; then
+		return
+	fi
+	VARIANT="$(jq -r '.variant // empty' "$METADATA_PATH")"
+}
+
 trap cleanup EXIT INT TERM
+
+select_testnode_context
+read_metadata
+: "${VARIANT:=l2}"
+export TESTNODE_EXPORT_CONFIG_DIR="$EXPORT_CONFIG_ROOT"
+export TESTNODE_VARIANT="$VARIANT"
 
 echo "state file: $DATA_ROOT/anvil-state"
 ls -la "$DATA_ROOT/anvil-state" 2>&1 || echo "state file missing!"
 echo "variant: $VARIANT"
+if [ -n "${TESTNODE_NAME:-}" ]; then
+	echo "testnode name: $TESTNODE_NAME"
+fi
 
 if [ "${TESTNODE_TIMEBOOST:-}" = "true" ]; then
 	SEQUENCER_HTTP_API="$SEQUENCER_HTTP_API,timeboost,auctioneer"
@@ -129,7 +181,7 @@ start_background env HOME="$DATA_ROOT/validator" /usr/local/bin/nitro \
 	--ws.port=8648 \
 	--auth.port=8552
 
-if [ "$VARIANT" != "l2" ]; then
+if [ "$VARIANT" != "l2" ] && [ "$VARIANT" != "l2-timeboost" ]; then
 	echo "waiting 10s for L2 sequencer to start..."
 	sleep 10
 	echo "L2 wait done, starting L3 node"
@@ -152,8 +204,8 @@ fi
 
 # Legacy compat: make network files accessible at /tokenbridge-data/ for SDK's gen:network
 mkdir -p /tokenbridge-data
-ln -sf /opt/arbitrum-testnode/export-config/l1l2_network.json /tokenbridge-data/l1l2_network.json
-ln -sf /opt/arbitrum-testnode/export-config/l2l3_network.json /tokenbridge-data/l2l3_network.json
+ln -sf "$EXPORT_CONFIG_ROOT/l1l2_network.json" /tokenbridge-data/l1l2_network.json
+ln -sf "$EXPORT_CONFIG_ROOT/l2l3_network.json" /tokenbridge-data/l2l3_network.json
 
 # Serve config files and health endpoint over HTTP for service container consumers
 start_background python3 /usr/local/bin/config-server.py 8080
