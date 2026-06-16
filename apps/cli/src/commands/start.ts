@@ -20,6 +20,7 @@ const startFileSchema = z.object({
 	nitroContractsVersion: z.string().optional(),
 	outputDir: z.string().optional(),
 	startupTimeoutSeconds: z.number().optional(),
+	timeboostEnabled: z.boolean().optional(),
 	version: z.string().optional(),
 });
 
@@ -36,6 +37,7 @@ interface StartResolvedInput {
 	nitroContractsVersion: string | undefined;
 	outputDir: string | undefined;
 	startupTimeoutSeconds: number;
+	timeboostEnabled: boolean;
 	version: string;
 }
 
@@ -63,6 +65,7 @@ type StartResult =
 			l3RpcUrl: string;
 			localNetworkPath: string;
 			networkConfigPaths: string[];
+			timeboostEnabled: boolean;
 			variant: string;
 	  };
 
@@ -152,6 +155,7 @@ export function resolveStartInput(
 		nitroContractsVersion?: string | undefined;
 		outputDir?: string | undefined;
 		startupTimeoutSeconds?: number | undefined;
+		timeboostEnabled?: boolean | undefined;
 		imageVersion?: string | undefined;
 	},
 	cwd = process.cwd(),
@@ -180,6 +184,7 @@ export function resolveStartInput(
 			optionValue: options.outputDir,
 		}),
 		startupTimeoutSeconds: options.startupTimeoutSeconds ?? fileConfig.startupTimeoutSeconds ?? 120,
+		timeboostEnabled: options.timeboostEnabled ?? fileConfig.timeboostEnabled ?? false,
 		version: requireStartVersion(options.imageVersion, fileConfig.version),
 	};
 }
@@ -204,6 +209,7 @@ export function runStart(
 		imageRepository: input.imageRepository,
 		l3Enabled: input.l3Enabled,
 		outputDir: input.outputDir,
+		timeboostEnabled: input.timeboostEnabled,
 		version: input.version,
 	});
 
@@ -232,6 +238,7 @@ export function runStart(
 		l3RpcUrl: state.rpcUrls.l3,
 		localNetworkPath: state.paths.localNetwork,
 		networkConfigPaths: input.networkConfigPaths,
+		timeboostEnabled: input.timeboostEnabled,
 		variant: state.variant,
 		...(input.configPath ? { configPath: input.configPath } : {}),
 	};
@@ -267,6 +274,10 @@ export const startCli = Cli.create("start", {
 			.number()
 			.optional()
 			.describe("Maximum time to wait for the testnode RPCs to become ready"),
+		timeboostEnabled: z
+			.boolean()
+			.optional()
+			.describe("Enable Timeboost sequencer args and auctioneer/timeboost HTTP APIs"),
 		imageVersion: z
 			.string()
 			.optional()

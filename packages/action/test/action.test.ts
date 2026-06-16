@@ -6,6 +6,7 @@ import {
 	buildTestnodeImageRef,
 	normalizeNitroContractsVersion,
 	resolveVariant,
+	testnodeDockerRunArgs,
 } from "../src/lib.mjs";
 
 describe("resolveVariant", () => {
@@ -15,6 +16,10 @@ describe("resolveVariant", () => {
 
 	it("uses l3-eth when l3 is enabled without a fee token", () => {
 		expect(resolveVariant({ l3Enabled: "true" })).toBe("l3-eth");
+	});
+
+	it("uses the L2 timeboost variant when timeboost is enabled", () => {
+		expect(resolveVariant({ l3Enabled: "true", timeboostEnabled: "true" })).toBe("l2-timeboost");
 	});
 
 	it("uses the custom gas token variants when decimals are provided", () => {
@@ -27,6 +32,12 @@ describe("resolveVariant", () => {
 		expect(() => resolveVariant({ feeTokenDecimals: "18", l3Enabled: "false" })).toThrow(
 			"fee-token-decimals requires L3 to be enabled",
 		);
+	});
+
+	it("rejects custom fee token decimals when timeboost is enabled", () => {
+		expect(() =>
+			resolveVariant({ feeTokenDecimals: "18", l3Enabled: "true", timeboostEnabled: "true" }),
+		).toThrow("fee-token-decimals is not supported with timeboost-enabled");
 	});
 });
 
@@ -50,6 +61,7 @@ describe("buildActionTestnodeState", () => {
 		expect(state.variant).toBe("l3-eth");
 		expect(state.contractsVersion).toBe("v3.2");
 		expect(state.imageRef).toContain("nc3.2");
+		expect(state.timeboostEnabled).toBe(false);
 		expect(state.outputDir).toBe("/tmp/runner/arbitrum-testnode/v1.2.3/l3-eth");
 		expect(state.paths.localNetwork).toBe(
 			"/tmp/runner/arbitrum-testnode/v1.2.3/l3-eth/config/localNetwork.json",
@@ -86,6 +98,31 @@ describe("buildActionTestnodeState", () => {
 
 		expect(state.outputDir).toBe("/workspace/sdk-shadow/shadow-testnode-output");
 		expect(state.configDir).toBe("/workspace/sdk-shadow/shadow-testnode-output/config");
+	});
+
+	it("passes the Timeboost flag into docker run args when enabled", () => {
+		const state = buildActionTestnodeState({
+			contractsVersion: "v3.2",
+			l3Enabled: "true",
+			runnerTemp: "/tmp/runner",
+			timeboostEnabled: "true",
+			version: "v1.2.3",
+		});
+
+		expect(state.variant).toBe("l2-timeboost");
+		expect(state.imageRef).toBe(`${DEFAULT_TESTNODE_IMAGE_REPOSITORY}:v1.2.3-nc3.2-l2-timeboost`);
+		expect(state.rpcUrls.l3).toBe("");
+		expect(state.timeboostEnabled).toBe(true);
+		const args = testnodeDockerRunArgs(state);
+		expect(args).toEqual(
+			expect.arrayContaining([
+				"TESTNODE_TIMEBOOST=true",
+				"TESTNODE_TIMEBOOST_REDIS_URL",
+				"TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS",
+			]),
+		);
+		expect(args).not.toContain("redis://timeboost-redis:6379");
+		expect(args).not.toContain("redis:7-alpine");
 	});
 
 	it("defaults to v3.2 when contractsVersion is not provided", () => {

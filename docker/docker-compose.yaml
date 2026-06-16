@@ -27,7 +27,10 @@ services:
     volumes:
       - ../config:/config
       - sequencer-data:/home/user/.arbitrum
-    entrypoint: ["nitro"]
+      - ./sequencer-entrypoint.sh:/usr/local/bin/testnode-sequencer-entrypoint:ro
+    environment:
+      - TESTNODE_TIMEBOOST_REDIS_URL=${TESTNODE_TIMEBOOST_REDIS_URL:-redis://timeboost-redis:6379}
+    entrypoint: ["/bin/sh", "/usr/local/bin/testnode-sequencer-entrypoint"]
     command:
       - --conf.file=/config/l2-nodeConfig.json
       - --node.feed.output.enable
@@ -36,7 +39,6 @@ services:
       - --node.staker.enable=false
       - --http.addr=0.0.0.0
       - --http.port=8547
-      - --http.api=net,web3,eth,txpool,debug
       - --http.corsdomain=*
       - --http.vhosts=*
       - --ws.addr=0.0.0.0
@@ -113,6 +115,9 @@ services:
     volumes:
       - ../config:/config
       - tokenbridge-data:/tokenbridge-data
+
+  timeboost-redis:
+    image: redis:7-alpine
 
   tokenbridge:
     image: nitro-testnode-tokenbridge:latest

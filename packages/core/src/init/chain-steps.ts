@@ -18,7 +18,6 @@ import { markStepDone } from "../state.js";
 import {
 	deployL1L2TokenBridge,
 	deployL2L3TokenBridge,
-	ensureL1L2TokenBridgeFunding,
 	ensureL2L3TokenBridgeFunding,
 	getL2ChildWeth,
 } from "../token-bridge.js";
@@ -40,6 +39,7 @@ const L2_DEPOSIT_READY_THRESHOLD_WEI = 250n * 10n ** 18n;
 const L3_DEPOSIT_TARGET_WEI = 50n * 10n ** 18n;
 const L3_DEPOSIT_RESERVE_WEI = 1n * 10n ** 18n;
 const L3_DEPOSIT_READY_THRESHOLD_WEI = 10n * 10n ** 18n;
+const L2_OWNER_DEPLOYER_FUNDING_WEI = 100n * 10n ** 18n;
 const CONTRACT_DEPLOYER_IMAGE = "nitro-testnode-contract-deployer:latest";
 const CONTRACT_DEPLOYER_POLLING_INTERVAL_MS = 100;
 const CONTRACT_DEPLOYER_CREATE2_CONFIRMATIONS = 1;
@@ -50,6 +50,13 @@ let contractDeployerImageBuilt = false;
 interface RollupCreatorDeployment {
 	rollupCreator: Address;
 	stakeToken: Address;
+}
+
+interface TimeboostAuctionDeployment {
+	auctionContract: Address;
+	auctioneer: Address;
+	beneficiary: Address;
+	biddingToken: Address;
 }
 
 import type { StepRunner } from "./support.js";
@@ -173,6 +180,90 @@ async function deployRollupCreatorViaDocker(
 	};
 }
 
+async function deployTimeboostAuctionViaDocker(
+	runtime: InitRuntime,
+	params: {
+		hostRpc: string;
+		dockerRpc: string;
+		deployerKey: string;
+	},
+): Promise<TimeboostAuctionDeployment> {
+	await ensureContractDeployerImage(runtime);
+	await waitForRpc(params.hostRpc);
+	console.log(`[init] Deploying Timeboost auction contract on ${params.dockerRpc}`);
+	const args = [
+		"run",
+		"--rm",
+		"--add-host",
+		"host.docker.internal:host-gateway",
+		"--workdir",
+		"/workspace/nitro-contracts",
+		"-v",
+		`${runtime.configDir}:/config`,
+		"-e",
+		`CHAIN_RPC=${params.dockerRpc}`,
+		"-e",
+		`DEPLOYER_PRIVKEY=${params.deployerKey}`,
+		"-e",
+		`CUSTOM_RPC_URL=${params.dockerRpc}`,
+		"-e",
+		`CUSTOM_PRIVKEY=${params.deployerKey}`,
+		"-e",
+		`POLLING_INTERVAL=${CONTRACT_DEPLOYER_POLLING_INTERVAL_MS}`,
+		"-e",
+		`TIMEBOOST_AUCTIONEER_ADDRESS=${accounts.auctioneer.address}`,
+		"-e",
+		`TIMEBOOST_ADMIN_ADDRESS=${accounts.l2owner.address}`,
+		"-e",
+		`TIMEBOOST_BENEFICIARY_ADDRESS=${accounts.l2owner.address}`,
+		"-e",
+		"TIMEBOOST_AUCTION_OUTPUT=/config/timeboost-auction.json",
+		CONTRACT_DEPLOYER_IMAGE,
+		"hardhat",
+		"run",
+		"--no-compile",
+		"--network",
+		"custom",
+		"scripts/local-deployment/deployTimeboostAuction.ts",
+	];
+	execOrThrow("docker", args, { timeout: 900_000 });
+
+	const output = readJsonFile<{
+		auctionContract?: string;
+		auctioneer?: string;
+		beneficiary?: string;
+		biddingToken?: string;
+	}>(runtime, "timeboost-auction.json");
+	if (!output.auctionContract) {
+		throw new Error("Timeboost auction deployment did not write an auction contract address");
+	}
+	if (!output.biddingToken) {
+		throw new Error("Timeboost auction deployment did not write a bidding token address");
+	}
+	console.log(`[init] Timeboost auction deployed at ${output.auctionContract}`);
+	console.log(`[init] Timeboost bidding token deployed at ${output.biddingToken}`);
+	return {
+		auctionContract: output.auctionContract as Address,
+		auctioneer: (output.auctioneer ?? accounts.auctioneer.address) as Address,
+		beneficiary: (output.beneficiary ?? accounts.l2owner.address) as Address,
+		biddingToken: output.biddingToken as Address,
+	};
+}
+
+async function fundL2OwnerForContractDeployments(): Promise<void> {
+	const funnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
+	for (const rpcUrl of [L1_RPC, L2_RPC]) {
+		console.log(`[init] Funding l2owner on ${rpcUrl} with ${L2_OWNER_DEPLOYER_FUNDING_WEI} wei`);
+		const client = walletClient(rpcUrl, accounts.funnel.privateKey);
+
+		await client.sendTransaction({
+			account: funnelAccount,
+			to: accounts.l2owner.address,
+			value: L2_OWNER_DEPLOYER_FUNDING_WEI,
+		});
+	}
+}
+
 function createL1Steps(runtime: InitRuntime): Record<string, StepRunner> {
 	return {
 		"start-l1": async (state) => {
@@ -292,6 +383,29 @@ function createL2RuntimeSteps(runtime: InitRuntime): Record<string, StepRunner> 
 			await waitForRpc(L2_RPC, 120_000);
 			return markStepDone(state, "wait-l2");
 		},
+		"deploy-timeboost-auction": async (state) => {
+			const deployment = await deployTimeboostAuctionViaDocker(runtime, {
+				hostRpc: L2_RPC,
+				dockerRpc: L2_RPC_DOCKER,
+				deployerKey: accounts.l2owner.privateKey,
+			});
+			return markStepDone(state, "deploy-timeboost-auction", { ...deployment });
+		},
+		"restart-l2-timeboost": async (state) => {
+			const auctionData = state.steps["deploy-timeboost-auction"]?.data;
+			if (!auctionData?.["auctionContract"]) {
+				throw new Error("Missing Timeboost auction deployment data");
+			}
+			composeUp(["timeboost-redis"], runtime.dockerOpts);
+			composeRestart(["sequencer"], runtime.dockerOpts);
+			return markStepDone(state, "restart-l2-timeboost", {
+				auctionContract: auctionData["auctionContract"],
+			});
+		},
+		"wait-l2-timeboost": async (state) => {
+			await waitForRpc(L2_RPC, 120_000);
+			return markStepDone(state, "wait-l2-timeboost");
+		},
 		"deposit-eth-to-l2": async (state) => {
 			const rollupData = state.steps["deploy-l2-rollup"]?.data;
 			if (!rollupData) {
@@ -319,12 +433,15 @@ function createL2RuntimeSteps(runtime: InitRuntime): Record<string, StepRunner> 
 			await waitForBalanceAtLeast(accounts.funnel.address, L2_RPC, L2_DEPOSIT_READY_THRESHOLD_WEI);
 			return markStepDone(state, "deposit-eth-to-l2");
 		},
+		"fund-l2owner": async (state) => {
+			await fundL2OwnerForContractDeployments();
+			return markStepDone(state, "fund-l2owner");
+		},
 		"deploy-l2-token-bridge": async (state) => {
 			const rollupData = state.steps["deploy-l2-rollup"]?.data;
 			if (!rollupData) {
 				throw new Error("Missing l2 rollup deployment data");
 			}
-			await ensureL1L2TokenBridgeFunding(L1_RPC, L2_RPC);
 			await new Promise((resolve) => setTimeout(resolve, 10_000));
 			await deployL1L2TokenBridge({
 				compose: runtime.dockerOpts,

@@ -6,6 +6,7 @@ export interface VariantDefinition {
 	hostPorts: { l1: number; l2: number; l2Ws: number; l3?: number; l3Ws?: number };
 	l3Enabled: boolean;
 	snapshotId: string;
+	timeboostEnabled?: boolean;
 }
 
 export interface TestnodeState {
@@ -23,6 +24,7 @@ export interface TestnodeState {
 	};
 	rpcUrls: { l1: string; l2: string; l3: string };
 	snapshotId: string;
+	timeboostEnabled: boolean;
 	variant: string;
 	variantDefinition: VariantDefinition;
 }
@@ -34,6 +36,7 @@ export interface BaseStateOptions {
 	imageRepository?: string | undefined;
 	l3Enabled?: boolean | string | undefined;
 	outputDir?: string | undefined;
+	timeboostEnabled?: boolean | string | undefined;
 	version: string;
 }
 

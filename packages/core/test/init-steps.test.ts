@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { getInitSteps } from "../src/init/steps.js";
 import {
 	createState,
 	getNextPendingStep,
@@ -12,61 +13,83 @@ import {
 	saveState,
 } from "../src/state.js";
 
-/**
- * The 14-step init sequence for booting L1 + L2 + L3 with bridges.
- * Defined here (not imported from commands/init.ts) to avoid side effects.
- */
-const INIT_STEPS = [
-	"start-l1",
-	"wait-l1",
-	"deploy-l2-rollup",
-	"generate-l2-config",
-	"start-l2",
-	"wait-l2",
-	"deposit-eth-to-l2",
-	"deploy-l2-token-bridge",
-	"deploy-l3-rollup",
-	"generate-l3-config",
-	"start-l3",
-	"wait-l3",
-	"deposit-eth-to-l3",
-	"deploy-l3-token-bridge",
-] as const;
-
 describe("init step orchestration", () => {
+	const defaultSteps = getInitSteps();
+	const timeboostSteps = getInitSteps({ timeboostEnabled: true });
+
 	describe("step order", () => {
-		it("has exactly 14 entries", () => {
-			expect(INIT_STEPS).toHaveLength(14);
+		it("has exactly 15 default entries", () => {
+			expect(defaultSteps).toHaveLength(15);
 		});
 
-		it("starts with L1 boot and ends with L3 token bridge", () => {
-			expect(INIT_STEPS[0]).toBe("start-l1");
-			expect(INIT_STEPS[13]).toBe("deploy-l3-token-bridge");
+		it("has exactly 18 entries when Timeboost is enabled", () => {
+			expect(timeboostSteps).toHaveLength(18);
+		});
+
+		it("starts with L1 boot and ends with L3 token bridge by default", () => {
+			expect(defaultSteps[0]).toBe("start-l1");
+			expect(defaultSteps[14]).toBe("deploy-l3-token-bridge");
 		});
 
 		it("has L2 steps before L3 steps", () => {
-			const deployL2Rollup = INIT_STEPS.indexOf("deploy-l2-rollup");
-			const deployL3Rollup = INIT_STEPS.indexOf("deploy-l3-rollup");
+			const deployL2Rollup = defaultSteps.indexOf("deploy-l2-rollup");
+			const deployL3Rollup = defaultSteps.indexOf("deploy-l3-rollup");
 			expect(deployL2Rollup).toBeLessThan(deployL3Rollup);
 		});
 
-		it("waits for each chain before using it", () => {
-			expect(INIT_STEPS.indexOf("start-l1")).toBeLessThan(INIT_STEPS.indexOf("wait-l1"));
-			expect(INIT_STEPS.indexOf("start-l2")).toBeLessThan(INIT_STEPS.indexOf("wait-l2"));
-			expect(INIT_STEPS.indexOf("start-l3")).toBeLessThan(INIT_STEPS.indexOf("wait-l3"));
+		it("waits for each chain before using it by default", () => {
+			expect(defaultSteps.indexOf("start-l1")).toBeLessThan(defaultSteps.indexOf("wait-l1"));
+			expect(defaultSteps.indexOf("start-l2")).toBeLessThan(defaultSteps.indexOf("wait-l2"));
+			expect(defaultSteps.indexOf("wait-l2")).toBeLessThan(
+				defaultSteps.indexOf("deposit-eth-to-l2"),
+			);
+			expect(defaultSteps.indexOf("deposit-eth-to-l2")).toBeLessThan(
+				defaultSteps.indexOf("fund-l2owner"),
+			);
+			expect(defaultSteps.indexOf("fund-l2owner")).toBeLessThan(
+				defaultSteps.indexOf("deploy-l2-token-bridge"),
+			);
+			expect(defaultSteps.indexOf("start-l3")).toBeLessThan(defaultSteps.indexOf("wait-l3"));
+		});
+
+		it("omits Timeboost steps by default", () => {
+			expect(defaultSteps).not.toContain("deploy-timeboost-auction");
+			expect(defaultSteps).not.toContain("restart-l2-timeboost");
+			expect(defaultSteps).not.toContain("wait-l2-timeboost");
+		});
+
+		it("inserts Timeboost steps only when enabled", () => {
+			expect(timeboostSteps.indexOf("wait-l2")).toBeLessThan(
+				timeboostSteps.indexOf("deposit-eth-to-l2"),
+			);
+			expect(timeboostSteps.indexOf("deposit-eth-to-l2")).toBeLessThan(
+				timeboostSteps.indexOf("fund-l2owner"),
+			);
+			expect(timeboostSteps.indexOf("fund-l2owner")).toBeLessThan(
+				timeboostSteps.indexOf("deploy-timeboost-auction"),
+			);
+			expect(timeboostSteps.indexOf("deploy-timeboost-auction")).toBeLessThan(
+				timeboostSteps.indexOf("restart-l2-timeboost"),
+			);
+			expect(timeboostSteps.indexOf("restart-l2-timeboost")).toBeLessThan(
+				timeboostSteps.indexOf("wait-l2-timeboost"),
+			);
+			expect(timeboostSteps.indexOf("wait-l2-timeboost")).toBeLessThan(
+				timeboostSteps.indexOf("deploy-l2-token-bridge"),
+			);
 		});
 	});
 
 	describe("fresh init", () => {
 		it("starts from first step when no steps are done", () => {
 			const state = createState();
-			const next = getNextPendingStep(state, [...INIT_STEPS]);
+			const next = getNextPendingStep(state, defaultSteps);
 			expect(next).toBe("start-l1");
 		});
 
 		it("marks no steps as done in a fresh state", () => {
 			const state = createState();
-			for (const step of INIT_STEPS) {
+			for (const step of defaultSteps) {
 				expect(isStepDone(state, step)).toBe(false);
 			}
 		});
@@ -78,49 +101,49 @@ describe("init step orchestration", () => {
 			state = markStepDone(state, "start-l1");
 			state = markStepDone(state, "wait-l1");
 
-			const next = getNextPendingStep(state, [...INIT_STEPS]);
+			const next = getNextPendingStep(state, defaultSteps);
 			expect(next).toBe("deploy-l2-rollup");
 		});
 
-		it("returns start-l3 when first 10 steps are done", () => {
+		it("returns start-l3 when all L2 setup steps are done", () => {
 			let state = createState();
-			for (const step of INIT_STEPS.slice(0, 10)) {
+			for (const step of defaultSteps.slice(0, defaultSteps.indexOf("start-l3"))) {
 				state = markStepDone(state, step);
 			}
 
-			const next = getNextPendingStep(state, [...INIT_STEPS]);
+			const next = getNextPendingStep(state, defaultSteps);
 			expect(next).toBe("start-l3");
 		});
 
 		it("returns the last step when all but last are done", () => {
 			let state = createState();
-			for (const step of INIT_STEPS.slice(0, 13)) {
+			for (const step of defaultSteps.slice(0, defaultSteps.indexOf("deploy-l3-token-bridge"))) {
 				state = markStepDone(state, step);
 			}
 
-			const next = getNextPendingStep(state, [...INIT_STEPS]);
+			const next = getNextPendingStep(state, defaultSteps);
 			expect(next).toBe("deploy-l3-token-bridge");
 		});
 	});
 
 	describe("all steps done", () => {
-		it("returns null when all 14 steps are done", () => {
+		it("returns null when all default steps are done", () => {
 			let state = createState();
-			for (const step of INIT_STEPS) {
+			for (const step of defaultSteps) {
 				state = markStepDone(state, step);
 			}
 
-			const next = getNextPendingStep(state, [...INIT_STEPS]);
+			const next = getNextPendingStep(state, defaultSteps);
 			expect(next).toBeNull();
 		});
 
 		it("reports every step as done", () => {
 			let state = createState();
-			for (const step of INIT_STEPS) {
+			for (const step of defaultSteps) {
 				state = markStepDone(state, step);
 			}
 
-			for (const step of INIT_STEPS) {
+			for (const step of defaultSteps) {
 				expect(isStepDone(state, step)).toBe(true);
 			}
 		});
@@ -133,7 +156,7 @@ describe("init step orchestration", () => {
 			state = markStepDone(state, "wait-l1");
 			state = markStepFailed(state, "deploy-l2-rollup", "deployment failed");
 
-			const next = getNextPendingStep(state, [...INIT_STEPS]);
+			const next = getNextPendingStep(state, defaultSteps);
 			expect(next).toBe("deploy-l2-rollup");
 		});
 
@@ -152,7 +175,7 @@ describe("init step orchestration", () => {
 			state = markStepDone(state, "start-l1");
 			expect(isStepDone(state, "start-l1")).toBe(true);
 
-			const next = getNextPendingStep(state, [...INIT_STEPS]);
+			const next = getNextPendingStep(state, defaultSteps);
 			expect(next).toBe("wait-l1");
 		});
 	});
@@ -195,7 +218,7 @@ describe("init step orchestration", () => {
 				throw new Error("loaded state should not be null");
 			}
 
-			const next = getNextPendingStep(loaded, [...INIT_STEPS]);
+			const next = getNextPendingStep(loaded, defaultSteps);
 			expect(next).toBe("deploy-l2-rollup");
 		});
 
@@ -210,7 +233,7 @@ describe("init step orchestration", () => {
 				throw new Error("loaded state should not be null");
 			}
 
-			const next = getNextPendingStep(loaded, [...INIT_STEPS]);
+			const next = getNextPendingStep(loaded, defaultSteps);
 			expect(next).toBe("wait-l1");
 
 			const step = loaded.steps["wait-l1"];

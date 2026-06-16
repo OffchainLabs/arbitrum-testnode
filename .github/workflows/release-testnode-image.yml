@@ -34,6 +34,7 @@ on:
         options:
           - all
           - l2
+          - l2-timeboost
           - l3-eth
           - l3-custom-6
           - l3-custom-16

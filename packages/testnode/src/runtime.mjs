@@ -37,6 +37,18 @@ export const VARIANTS = {
 			l2Ws: 8548,
 		},
 	},
+	"l2-timeboost": {
+		name: "l2-timeboost",
+		description: "L1 + L2 testnode with Timeboost enabled on L2",
+		snapshotId: "l2-timeboost",
+		l3Enabled: false,
+		timeboostEnabled: true,
+		hostPorts: {
+			l1: 8545,
+			l2: 8547,
+			l2Ws: 8548,
+		},
+	},
 	"l3-eth": {
 		name: "l3-eth",
 		description: "L1 + L2 + L3 testnode with ETH gas on L3",
@@ -138,10 +150,22 @@ export function normalizeNitroContractsVersion(value) {
 	return v;
 }
 
-/** @param {{ feeTokenDecimals?: number | string | undefined; l3Enabled?: boolean | string | undefined }} options */
-export function resolveVariant({ feeTokenDecimals, l3Enabled }) {
+/**
+ * @param {{
+ *   feeTokenDecimals?: number | string | undefined;
+ *   l3Enabled?: boolean | string | undefined;
+ *   timeboostEnabled?: boolean | string | undefined;
+ * }} options
+ */
+export function resolveVariant({ feeTokenDecimals, l3Enabled, timeboostEnabled }) {
 	const enableL3 = toBoolean(l3Enabled);
 	const decimals = normalizeFeeTokenDecimals(feeTokenDecimals);
+	if (toBoolean(timeboostEnabled)) {
+		if (decimals) {
+			throw new Error("fee-token-decimals is not supported with timeboost-enabled");
+		}
+		return "l2-timeboost";
+	}
 	if (!enableL3 && decimals) {
 		throw new Error("fee-token-decimals requires L3 to be enabled");
 	}
@@ -199,14 +223,17 @@ function buildTestnodeState({
 	imageRepository,
 	l3Enabled,
 	outputDir,
+	timeboostEnabled,
 	version,
 	defaultOutputDir,
 }) {
-	const variant = resolveVariant({ feeTokenDecimals, l3Enabled });
+	const variant = resolveVariant({ feeTokenDecimals, l3Enabled, timeboostEnabled });
 	const definition = VARIANTS[variant];
 	if (!definition) {
 		throw new Error(`Unknown variant ${variant}`);
 	}
+	const resolvedTimeboostEnabled =
+		toBoolean(timeboostEnabled) || definition.timeboostEnabled === true;
 	const resolvedContractsVersion = normalizeNitroContractsVersion(contractsVersion);
 	const resolvedVersion = version;
 	const resolvedOutputDir = outputDir ?? defaultOutputDir({ variant, version });
@@ -241,6 +268,7 @@ function buildTestnodeState({
 		},
 		rpcUrls,
 		snapshotId: definition.snapshotId,
+		timeboostEnabled: resolvedTimeboostEnabled,
 		variant,
 		variantDefinition: definition,
 	};
@@ -255,6 +283,7 @@ export function buildActionTestnodeState({
 	l3Enabled,
 	outputDir,
 	runnerTemp,
+	timeboostEnabled,
 	version,
 	workspace,
 }) {
@@ -269,6 +298,7 @@ export function buildActionTestnodeState({
 				? outputDir
 				: resolve(workspace || process.cwd(), outputDir)
 			: undefined,
+		timeboostEnabled,
 		version,
 		defaultOutputDir: ({ variant, version: nextVersion }) =>
 			defaultActionOutputDir({ runnerTemp, variant, version: nextVersion }),
@@ -284,6 +314,7 @@ export function buildStartTestnodeState({
 	imageRepository,
 	l3Enabled,
 	outputDir,
+	timeboostEnabled,
 	version,
 }) {
 	return buildTestnodeState({
@@ -297,6 +328,7 @@ export function buildStartTestnodeState({
 				? outputDir
 				: resolve(cwd, outputDir)
 			: undefined,
+		timeboostEnabled,
 		version,
 		defaultOutputDir: ({ variant, version: nextVersion }) =>
 			defaultStartOutputDir({ cwd, variant, version: nextVersion }),
@@ -328,6 +360,11 @@ export function testnodeDockerRunArgs(state) {
 		}
 		args.push("-p", `127.0.0.1:${hostPorts.l3}:8549`);
 		args.push("-p", `127.0.0.1:${hostPorts.l3Ws}:8550`);
+	}
+	if (state.timeboostEnabled) {
+		args.push("-e", "TESTNODE_TIMEBOOST=true");
+		args.push("-e", "TESTNODE_TIMEBOOST_REDIS_URL");
+		args.push("-e", "TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS");
 	}
 	args.push(state.imageRef);
 	return args;

@@ -12,6 +12,7 @@ describe("resolveStartInput", () => {
 
 		expect(resolved.configPath).toBeUndefined();
 		expect(resolved.l3Enabled).toBe(true);
+		expect(resolved.timeboostEnabled).toBe(false);
 		expect(resolved.startupTimeoutSeconds).toBe(120);
 		expect(resolved.networkConfigPaths).toEqual([]);
 	});
@@ -34,12 +35,28 @@ describe("resolveStartInput", () => {
 
 		expect(resolved.configPath).toBe(configPath);
 		expect(resolved.l3Enabled).toBe(false);
+		expect(resolved.timeboostEnabled).toBe(false);
 		expect(resolved.outputDir).toBe(path.join(cwd, "exports"));
 		expect(resolved.networkConfigPaths).toEqual([
 			path.join(cwd, "net/a.json"),
 			path.join(cwd, "net/b.json"),
 		]);
 		expect(resolved.startupTimeoutSeconds).toBe(45);
+	});
+
+	it("loads timeboost from explicit config", () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "start-timeboost-config-"));
+		fs.writeFileSync(
+			path.join(cwd, "testnode.start.json"),
+			JSON.stringify({
+				version: "v1.2.3",
+				timeboostEnabled: true,
+			}),
+		);
+
+		const resolved = resolveStartInput({}, cwd);
+
+		expect(resolved.timeboostEnabled).toBe(true);
 	});
 
 	it("lets CLI flags override file config and resolves those paths from cwd", () => {
@@ -60,12 +77,14 @@ describe("resolveStartInput", () => {
 				networkConfigPath: "./from-cli/network.json, ./second/network.json",
 				outputDir: "./from-cli",
 				imageVersion: "v2.0.0",
+				timeboostEnabled: false,
 			},
 			cwd,
 		);
 
 		expect(resolved.version).toBe("v2.0.0");
 		expect(resolved.l3Enabled).toBe(true);
+		expect(resolved.timeboostEnabled).toBe(false);
 		expect(resolved.outputDir).toBe(path.join(cwd, "from-cli"));
 		expect(resolved.networkConfigPaths).toEqual([
 			path.join(cwd, "from-cli/network.json"),
@@ -104,6 +123,7 @@ describe("runStart", () => {
 				nitroContractsVersion: undefined,
 				outputDir: undefined,
 				startupTimeoutSeconds: 120,
+				timeboostEnabled: true,
 				version: "v1.2.3",
 			},
 			{
@@ -115,19 +135,20 @@ describe("runStart", () => {
 
 		expect(bootTestnode).toHaveBeenCalledWith(
 			expect.objectContaining({
-				containerName: "arbitrum-testnode-l3-eth",
-				outputDir: path.join(cwd, ".arbitrum-testnode/v1.2.3/l3-eth"),
-				variant: "l3-eth",
+				containerName: "arbitrum-testnode-l2-timeboost",
+				outputDir: path.join(cwd, ".arbitrum-testnode/v1.2.3/l2-timeboost"),
+				timeboostEnabled: true,
+				variant: "l2-timeboost",
 			}),
 			120_000,
 		);
 		expect(copyNetworkConfigPaths).toHaveBeenCalledWith(
-			path.join(cwd, ".arbitrum-testnode/v1.2.3/l3-eth/config/localNetwork.json"),
+			path.join(cwd, ".arbitrum-testnode/v1.2.3/l2-timeboost/config/localNetwork.json"),
 			[path.join(cwd, "sdk/localNetwork.json")],
 		);
 		expect(result.success).toBe(true);
 		expect(result.localNetworkPath).toBe(
-			path.join(cwd, ".arbitrum-testnode/v1.2.3/l3-eth/config/localNetwork.json"),
+			path.join(cwd, ".arbitrum-testnode/v1.2.3/l2-timeboost/config/localNetwork.json"),
 		);
 	});
 
@@ -144,6 +165,7 @@ describe("runStart", () => {
 				nitroContractsVersion: undefined,
 				outputDir: undefined,
 				startupTimeoutSeconds: 0,
+				timeboostEnabled: false,
 				version: "v1.2.3",
 			}),
 		).toThrow("startup-timeout-seconds must be a positive number");

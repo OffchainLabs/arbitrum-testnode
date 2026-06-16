@@ -47,6 +47,7 @@ Optional config fields:
 | `containerName` | `arbitrum-testnode-<variant>` | Docker container name override |
 | `outputDir` | `./.arbitrum-testnode/<version>/<variant>` | Export directory for config files |
 | `startupTimeoutSeconds` | `120` | RPC readiness timeout |
+| `timeboostEnabled` | `false` | Use the L2 Timeboost image variant and enable Timeboost sequencer args plus the `timeboost,auctioneer` HTTP APIs |
 | `networkConfigPath` | — | One path or an array of paths to overwrite with `localNetwork.json` |
 
 Start exports config under `outputDir/config` and boots these host RPCs:
@@ -64,6 +65,7 @@ Start exports config under `outputDir/config` and boots these host RPCs:
   with:
     version: v0.1.0
     l3-enabled: true
+    timeboost-enabled: false
     github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
@@ -77,6 +79,8 @@ The action starts a fully initialized testnode and exports environment variables
 | `ARBITRUM_TESTNODE_LOCAL_NETWORK_PATH` | Path to `localNetwork.json` with all deployed contract addresses |
 | `ARBITRUM_TESTNODE_CONFIG_DIR` | Directory with all exported config files |
 | `ARBITRUM_TESTNODE_VARIANT` | Resolved variant name, such as `l3-eth` |
+
+Snapshots built by `init --timeboost-enabled` deploy a local Timeboost `ExpressLaneAuction` contract on L2 and write its proxy address to `timeboost-auction.json`. The snapshot build starts a local compose Redis service only while building the snapshot. When `timeboost-enabled` / `timeboostEnabled` is true, the action and `start` command resolve the L2-only `l2-timeboost` image tag, for example `ghcr.io/offchainlabs/arbitrum-testnode-ci:v0.2.2-nc3.2-l2-timeboost`. The published image uses the deployed address by default; `TESTNODE_TIMEBOOST_AUCTION_CONTRACT_ADDRESS` can still override it. Published Timeboost stacks require an external Redis endpoint supplied through `TESTNODE_TIMEBOOST_REDIS_URL`; `start` and the action do not deploy Redis.
 
 ### Local Development
 
@@ -115,6 +119,7 @@ Each entry defines a named variant:
 - `snapshotId`: the local snapshot directory to install and bake into the image
 - `hostPorts`: the host RPC ports exposed by `start` and the action
 - `l3Enabled`: whether the image includes an L3 node
+- `timeboostEnabled`: whether the variant automatically starts the L2 sequencer with Timeboost enabled
 
 The `Publish Testnode` workflow publishes automatically when a `v*` tag is pushed.
 Tag-triggered publishes use the `default` entry in `config/testnodes.json`, with the
@@ -147,6 +152,8 @@ snapshot-version: v0.1.6
 
 Publish every catalog entry by setting `variant` to `all`. Publish every supported Nitro contracts tag by setting `nitro-contracts-version` to `all`.
 
+The default Timeboost publish target is `l2-timeboost`, which expects the `l2-timeboost` snapshot ID in the selected snapshot release. It can be published directly with `variant: l2-timeboost` or through the `name: timeboost` entry in `config/testnodes.json`.
+
 ## Init Sequence
 
 The `init` command runs 14 steps to deploy a complete L1 + L2 + L3 stack:
@@ -167,6 +174,8 @@ The `init` command runs 14 steps to deploy a complete L1 + L2 + L3 stack:
 | 12 | `wait-l3` | Wait for L3 RPC readiness |
 | 13 | `deposit-eth-to-l3` | Bridge ETH from L2 to L3 via inbox |
 | 14 | `deploy-l3-token-bridge` | Deploy L2-L3 token bridge contracts |
+
+When `init --timeboost-enabled` is set, three Timeboost steps are inserted after `wait-l2`: `deploy-timeboost-auction`, `restart-l2-timeboost`, and `wait-l2-timeboost`.
 
 State is persisted to `config/state.json` after each step, enabling automatic resume on failure.
 
@@ -205,6 +214,7 @@ Derived from the official nitro-testnode mnemonic. All accounts are pre-funded o
 | `output-dir` | No | — | Directory where exported config files should be written |
 | `container-name` | No | — | Docker container name override |
 | `startup-timeout-seconds` | No | `120` | Max wait time for RPC readiness |
+| `timeboost-enabled` | No | `false` | Use the L2 Timeboost image variant and enable Timeboost sequencer args plus the `timeboost,auctioneer` HTTP APIs |
 | `network-config-path` | No | — | Comma-separated path(s) to overwrite with exported `localNetwork.json` |
 
 ## Action Outputs

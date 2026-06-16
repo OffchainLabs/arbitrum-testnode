@@ -27,6 +27,7 @@ const state = buildActionTestnodeState({
 	l3Enabled: process.env["INPUT_L3_ENABLED"],
 	outputDir: process.env["INPUT_OUTPUT_DIR"],
 	runnerTemp: process.env["RUNNER_TEMP"],
+	timeboostEnabled: process.env["INPUT_TIMEBOOST_ENABLED"],
 	version: process.env["INPUT_VERSION"],
 	workspace: process.env["GITHUB_WORKSPACE"],
 });
