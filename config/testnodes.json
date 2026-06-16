@@ -4,14 +4,14 @@
 			"variant": "l3-eth",
 			"snapshotId": "default",
 			"snapshotReleaseTag": "v0.1.6",
-			"version": "v0.2.0",
+			"version": "v0.2.3",
 			"nitroContractsVersion": "v3.2"
 		},
 		"l2": {
 			"variant": "l2",
 			"snapshotId": "l2",
 			"snapshotReleaseTag": "v0.1.6",
-			"version": "v0.2.0",
+			"version": "v0.2.3",
 			"nitroContractsVersion": "v3.2"
 		},
 		"timeboost": {

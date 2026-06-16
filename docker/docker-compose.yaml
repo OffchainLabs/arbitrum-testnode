@@ -1,4 +1,24 @@
 services:
+  # L1 anvil chain. 8545 is published so both host tooling (127.0.0.1:8545) and
+  # Nitro containers (host.docker.internal:8545) reach it. State persists to the
+  # bind-mounted config/anvil-state so snapshots work.
+  l1:
+    image: ghcr.io/foundry-rs/foundry:v1.3.5
+    ports:
+      - "8545:8545"
+    entrypoint: ["anvil"]
+    command:
+      - --host=0.0.0.0
+      - --port=8545
+      - --block-time=1
+      - --accounts=10
+      - --balance=1000000
+      - --mnemonic=indoor dish desk flag debris potato excuse depart ticket judge file exit
+      - --chain-id=1337
+      - --state=/state
+    volumes:
+      - ../config/anvil-state:/state
+
   sequencer:
     image: offchainlabs/nitro-node:v3.9.5-66e42c4
     ports:
@@ -25,6 +45,8 @@ services:
       - --ws.port=8548
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - l1
 
   l3node:
     image: offchainlabs/nitro-node:v3.9.5-66e42c4
@@ -86,6 +108,7 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       - sequencer
+      - l1
 
   scripts:
     image: nitro-testnode-scripts:latest
@@ -103,6 +126,7 @@ services:
       dockerfile: tokenbridge.Dockerfile
     depends_on:
       - sequencer
+      - l1
     environment:
       - ARB_URL=http://sequencer:8547
       - ETH_URL=http://host.docker.internal:8545
