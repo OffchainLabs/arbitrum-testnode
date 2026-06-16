@@ -1,6 +1,5 @@
 import { resolve } from "node:path";
 import { composeDown } from "@arbitrum/testnode-core/docker.js";
-import { exec } from "@arbitrum/testnode-core/exec.js";
 import { stopCurrentRun } from "@arbitrum/testnode-core/run-logger.js";
 import { Cli } from "incur";
 import { findProjectRoot } from "../project-root.js";
@@ -19,10 +18,6 @@ export const stopCli = Cli.create("stop", {
 
 		console.log("[stop] Stopping Docker services...");
 		composeDown(DOCKER_OPTS);
-
-		console.log("[stop] Killing Anvil...");
-		exec("pkill", ["-f", "anvil.*--port.*8545"]);
-		exec("pkill", ["-f", "testnode-l1-heartbeat"]);
 
 		console.log("[stop] Done.");
 		return { success: true };
