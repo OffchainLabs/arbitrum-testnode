@@ -1,6 +1,9 @@
-import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { type ChildProcess, spawn } from "node:child_process";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { composeDown, composeUp, waitForRpc } from "./docker.js";
+import process from "node:process";
+import { MNEMONIC } from "./accounts.js";
+import { composeUp, waitForRpc } from "./docker.js";
 import { exec } from "./exec.js";
 import { SNAPSHOTS_DIRNAME, getAnvilStateDir } from "./snapshot.js";
 
@@ -16,14 +19,19 @@ export interface RuntimeOptions {
 	configDir: string;
 }
 
+const L1_HEARTBEAT_MARKER = "testnode-l1-heartbeat";
 const STATIC_CONFIG_FILES = new Set([SNAPSHOTS_DIRNAME, "testnodes.json"]);
 
 export function stopRuntime(options: RuntimeOptions): void {
-	composeDown({ composeFile: options.composeFile, projectName: options.projectName });
+	exec("docker", ["compose", "-f", options.composeFile, "-p", options.projectName, "down"]);
+	exec("pkill", ["-f", "anvil.*--port.*8545"]);
+	exec("pkill", ["-f", L1_HEARTBEAT_MARKER]);
 }
 
 export function resetRuntime(options: RuntimeOptions): void {
 	exec("docker", ["compose", "-f", options.composeFile, "-p", options.projectName, "down", "-v"]);
+	exec("pkill", ["-f", "anvil.*--port.*8545"]);
+	exec("pkill", ["-f", L1_HEARTBEAT_MARKER]);
 
 	if (!existsSync(options.configDir)) {
 		return;
@@ -37,20 +45,52 @@ export function resetRuntime(options: RuntimeOptions): void {
 	}
 }
 
-/**
- * Start the L1 anvil chain as the `l1` Docker compose service. The host
- * `config/anvil-state` dir is bind-mounted into the container, so it is created
- * first to keep snapshot capture/restore working against the host fs.
- */
-export function startL1Container(options: RuntimeOptions): void {
-	mkdirSync(getAnvilStateDir(options.configDir), { recursive: true });
-	const result = composeUp(["l1"], {
-		composeFile: options.composeFile,
-		projectName: options.projectName,
+export function startAnvilWithState(configDir: string): ChildProcess {
+	const anvilProcess = spawn(
+		"anvil",
+		[
+			"--host",
+			"0.0.0.0",
+			"--port",
+			"8545",
+			"--block-time",
+			"1",
+			"--accounts",
+			"10",
+			"--balance",
+			"1000000",
+			"--mnemonic",
+			MNEMONIC,
+			"--chain-id",
+			"1337",
+			"--state",
+			getAnvilStateDir(configDir),
+		],
+		{ stdio: "ignore", detached: true },
+	);
+	anvilProcess.unref();
+	const heartbeatScript = `
+/* ${L1_HEARTBEAT_MARKER} */
+const rpcUrl = "http://127.0.0.1:8545";
+const payload = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "evm_mine", params: [] });
+const tick = async () => {
+  try {
+    await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: payload,
+    });
+  } catch {}
+};
+setInterval(tick, 100);
+tick();
+`;
+	const heartbeat = spawn(process.execPath, ["-e", heartbeatScript], {
+		stdio: "ignore",
+		detached: true,
 	});
-	if (result.exitCode !== 0) {
-		throw new Error(result.stderr.trim() || "failed to start l1 service");
-	}
+	heartbeat.unref();
+	return anvilProcess;
 }
 
 export async function startNitroFromSnapshot(

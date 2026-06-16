@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { isServiceRunning } from "@arbitrum/testnode-core/docker.js";
+import { exec } from "@arbitrum/testnode-core/exec.js";
 import {
 	isPidRunning,
 	loadCurrentRun,
@@ -26,8 +27,12 @@ export const statusCli = Cli.create("status", {
 		const state = loadState(CONFIG_DIR);
 		const run = loadCurrentRun(CONFIG_DIR);
 
+		// Check Anvil (L1) — it runs on host, not in Docker
+		const anvilCheck = exec("pgrep", ["-f", "anvil.*--port.*8545"]);
+		const anvilRunning = anvilCheck.exitCode === 0;
+
 		const services: Record<string, boolean> = {
-			anvil: isServiceRunning("l1", DOCKER_OPTS),
+			anvil: anvilRunning,
 			sequencer: isServiceRunning("sequencer", DOCKER_OPTS),
 			validator: isServiceRunning("validator", DOCKER_OPTS),
 			l3node: isServiceRunning("l3node", DOCKER_OPTS),

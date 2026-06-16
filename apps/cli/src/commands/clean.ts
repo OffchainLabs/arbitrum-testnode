@@ -15,6 +15,10 @@ function stopAllServices(): void {
 	console.log("[clean] Stopping Docker...");
 	composeDown({ composeFile: COMPOSE_FILE, projectName: "arbitrum-testnode" });
 	exec("docker", ["compose", "-f", COMPOSE_FILE, "-p", "arbitrum-testnode", "down", "-v"]);
+
+	console.log("[clean] Killing Anvil...");
+	exec("pkill", ["-f", "anvil.*--port.*8545"]);
+	exec("pkill", ["-f", "testnode-l1-heartbeat"]);
 }
 
 function removeConfigDirPreservingSnapshots(): void {

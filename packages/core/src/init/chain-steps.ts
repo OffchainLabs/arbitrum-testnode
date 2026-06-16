@@ -1,3 +1,4 @@
+import type { ChildProcess } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Address } from "viem";
@@ -12,7 +13,7 @@ import { deployTestErc20 } from "../fee-token.js";
 import { ZERO_ADDRESS } from "../init-helpers.js";
 import { patchGeneratedL2NodeConfig, patchGeneratedL3NodeConfig } from "../node-config-patches.js";
 import { inboxAbi, publicClient, rollupAbi, walletClient } from "../rpc.js";
-import { startL1Container } from "../runtime.js";
+import { startAnvilWithState } from "../runtime.js";
 import { deployRollupViaSdk, prepareNodeConfigFromDeployment } from "../sdk-chain.js";
 import { markStepDone } from "../state.js";
 import {
@@ -45,6 +46,7 @@ const CONTRACT_DEPLOYER_POLLING_INTERVAL_MS = 100;
 const CONTRACT_DEPLOYER_CREATE2_CONFIRMATIONS = 1;
 const WASM_MODULE_ROOT = "0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a";
 
+let anvilProcess: ChildProcess | undefined;
 let contractDeployerImageBuilt = false;
 
 interface RollupCreatorDeployment {
@@ -176,8 +178,10 @@ async function deployRollupCreatorViaDocker(
 function createL1Steps(runtime: InitRuntime): Record<string, StepRunner> {
 	return {
 		"start-l1": async (state) => {
-			startL1Container(runtime);
-			return markStepDone(state, "start-l1");
+			anvilProcess = startAnvilWithState(runtime.configDir);
+			return markStepDone(state, "start-l1", {
+				...(anvilProcess?.pid ? { pid: anvilProcess.pid } : {}),
+			});
 		},
 		"wait-l1": async (state) => {
 			await waitForRpc(L1_RPC);

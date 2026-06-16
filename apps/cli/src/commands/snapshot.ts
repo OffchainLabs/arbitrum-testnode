@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { waitForRpc } from "@arbitrum/testnode-core/docker.js";
 import {
-	startL1Container,
+	startAnvilWithState,
 	startNitroFromSnapshot,
 	stopRuntime,
 } from "@arbitrum/testnode-core/runtime.js";
@@ -72,11 +72,7 @@ snapshotCli.command("build", {
 			configDir: CONFIG_DIR,
 		});
 		const manifest = captureSnapshot(CONFIG_DIR, COMPOSE_FILE, snapshotId);
-		startL1Container({
-			composeFile: COMPOSE_FILE,
-			projectName: "arbitrum-testnode",
-			configDir: CONFIG_DIR,
-		});
+		startAnvilWithState(CONFIG_DIR);
 		await waitForRpc(RPCS.l1);
 		await startNitroFromSnapshot(
 			{
@@ -106,11 +102,7 @@ snapshotCli.command("restore", {
 			configDir: CONFIG_DIR,
 		});
 		const manifest = restoreSnapshot(CONFIG_DIR, snapshotId);
-		startL1Container({
-			composeFile: COMPOSE_FILE,
-			projectName: "arbitrum-testnode",
-			configDir: CONFIG_DIR,
-		});
+		startAnvilWithState(CONFIG_DIR);
 		await waitForRpc(RPCS.l1);
 		await startNitroFromSnapshot(
 			{
