@@ -64,7 +64,7 @@ export async function startNitroFromSnapshot(
 	if (l2Result.exitCode !== 0) {
 		throw new Error(l2Result.stderr.trim() || "failed to start L2 services");
 	}
-	await waitForRpc(rpcs.l2);
+	await waitForRpc(rpcs.l2, 120_000);
 
 	const l3Result = composeUp(["l3node"], {
 		composeFile: options.composeFile,
@@ -73,5 +73,5 @@ export async function startNitroFromSnapshot(
 	if (l3Result.exitCode !== 0) {
 		throw new Error(l3Result.stderr.trim() || "failed to start l3node");
 	}
-	await waitForRpc(rpcs.l3);
+	await waitForRpc(rpcs.l3, 120_000);
 }

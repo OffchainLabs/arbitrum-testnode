@@ -85,19 +85,37 @@ export { INIT_STEP_NAMES };
 
 export interface InitCommandOptions {
 	background?: boolean | undefined;
+	captureId?: string | undefined;
 	feeTokenDecimals?: number | undefined;
 	foreground?: boolean | undefined;
 	rebuild?: boolean | undefined;
+	skipPostCaptureVerify?: boolean | undefined;
 	snapshotVersion?: string | undefined;
 	timeboostEnabled?: boolean | undefined;
+}
+
+/**
+ * Resolve the snapshot id init captures under. `captureId` (used by the publish
+ * pipeline to capture directly under a variant id) takes precedence over the
+ * default feeTokenDecimals-derived id.
+ */
+export function resolveInitSnapshotId(options: {
+	captureId?: string | undefined;
+	feeTokenDecimals?: number | undefined;
+}): string {
+	if (options.captureId) {
+		return options.captureId;
+	}
+	return options.feeTokenDecimals !== undefined
+		? `l3-custom-${options.feeTokenDecimals}`
+		: DEFAULT_SNAPSHOT_ID;
 }
 
 export async function runInitCommand(options: InitCommandOptions, context: InitContext) {
 	const runtime = createInitRuntime(context);
 	const { feeTokenDecimals } = options;
 	assertValidFeeTokenDecimals(feeTokenDecimals);
-	const snapshotId =
-		feeTokenDecimals !== undefined ? `l3-custom-${feeTokenDecimals}` : DEFAULT_SNAPSHOT_ID;
+	const snapshotId = resolveInitSnapshotId(options);
 
 	if (options.background && !options.foreground) {
 		return startBackgroundInit(runtime, {
@@ -121,6 +139,7 @@ async function runInitForeground(
 	options: {
 		foreground?: boolean | undefined;
 		rebuild?: boolean | undefined;
+		skipPostCaptureVerify?: boolean | undefined;
 		snapshotVersion?: string | undefined;
 		timeboostEnabled?: boolean | undefined;
 	},
@@ -163,22 +182,37 @@ async function runInitForeground(
 	logInitTimeline(result.timings, totalElapsed);
 
 	if (!result.success) {
-		return finishFailedInit(result);
+		finishFailedInit(result);
 	}
 
-	return finalizeFreshInit(runtime, snapshotId, totalStart, result.steps);
+	return finalizeFreshInit(
+		runtime,
+		snapshotId,
+		totalStart,
+		result.steps,
+		options.skipPostCaptureVerify,
+	);
 }
 
-function finishFailedInit(result: {
+export class InitFailedError extends Error {
+	readonly failedStep: string | undefined;
+	constructor(failedStep: string | undefined, cause: string | undefined) {
+		super(`init failed at step ${failedStep ?? "unknown"}${cause ? `: ${cause}` : ""}`);
+		this.name = "InitFailedError";
+		this.failedStep = failedStep;
+	}
+}
+
+export function finishFailedInit(result: {
 	error?: string | undefined;
 	failedStep?: string | undefined;
-}) {
+}): never {
 	finishActiveRun("failed", {
 		exitCode: 1,
 		...(result.error ? { error: result.error } : {}),
 		...(result.failedStep ? { failedStep: result.failedStep } : {}),
 	});
-	return { success: false as const, failedStep: result.failedStep, error: result.error };
+	throw new InitFailedError(result.failedStep, result.error);
 }
 
 function assertValidFeeTokenDecimals(feeTokenDecimals: number | undefined): void {
@@ -290,6 +324,7 @@ async function finalizeFreshInit(
 	snapshotId: string,
 	totalStart: number,
 	steps: string[],
+	skipPostCaptureVerify?: boolean,
 ) {
 	stopRuntime({
 		composeFile: runtime.composeFile,
@@ -297,6 +332,16 @@ async function finalizeFreshInit(
 		configDir: runtime.configDir,
 	});
 	const snapshot = captureSnapshot(runtime.configDir, runtime.composeFile, snapshotId);
+	if (skipPostCaptureVerify) {
+		const totalElapsed = Date.now() - totalStart;
+		finishActiveRun("completed", { exitCode: 0 });
+		return {
+			success: true as const,
+			stepsCompleted: steps.length,
+			totalSeconds: totalElapsed / 1000,
+			snapshotId: snapshot.snapshotId,
+		};
+	}
 	startL1Container(runtime);
 	await waitForRpc(L1_RPC);
 	await startNitroFromSnapshot(

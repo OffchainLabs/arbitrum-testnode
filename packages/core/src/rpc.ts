@@ -58,7 +58,10 @@ export const erc20Abi = parseAbi([
 	"function deposit() payable",
 ]);
 
-export const inboxAbi = parseAbi(["function depositEth() payable"]);
+export const inboxAbi = parseAbi([
+	"function depositEth() payable",
+	"function depositERC20(uint256 amount) returns (uint256)",
+]);
 
 export const rollupAbi = parseAbi([
 	"function baseStake() view returns (uint256)",
