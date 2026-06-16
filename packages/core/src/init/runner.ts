@@ -161,15 +161,19 @@ async function runInitForeground(
 	logInitTimeline(result.timings, totalElapsed);
 
 	if (!result.success) {
-		finishActiveRun("failed", {
-			exitCode: 1,
-			...(result.error ? { error: result.error } : {}),
-			...(result.failedStep ? { failedStep: result.failedStep } : {}),
-		});
-		return { success: false as const, failedStep: result.failedStep, error: result.error };
+		return finishFailedInit(result);
 	}
 
 	return finalizeFreshInit(runtime, snapshotId, totalStart);
+}
+
+function finishFailedInit(result: { failedStep?: string; error?: string }) {
+	finishActiveRun("failed", {
+		exitCode: 1,
+		...(result.error ? { error: result.error } : {}),
+		...(result.failedStep ? { failedStep: result.failedStep } : {}),
+	});
+	return { success: false as const, failedStep: result.failedStep, error: result.error };
 }
 
 function assertValidFeeTokenDecimals(feeTokenDecimals: number | undefined): void {

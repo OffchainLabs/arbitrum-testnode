@@ -1,6 +1,9 @@
 name: Publish Testnode
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       name:
@@ -58,13 +61,19 @@ jobs:
 
       - name: Resolve testnode inputs
         id: resolve
+        env:
+          TESTNODE_NAME: ${{ github.event_name == 'push' && 'default' || inputs.name }}
+          TESTNODE_VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+          TESTNODE_SNAPSHOT_VERSION: ${{ inputs.snapshot-version }}
+          TESTNODE_VARIANT: ${{ inputs.variant }}
+          TESTNODE_NITRO_CONTRACTS_VERSION: ${{ inputs.nitro-contracts-version }}
         run: >-
           node scripts/ci/resolve-testnode.mjs
-          --name "${{ inputs.name }}"
-          --version "${{ inputs.version }}"
-          --snapshot-version "${{ inputs.snapshot-version }}"
-          --variant "${{ inputs.variant }}"
-          --nitro-contracts-version "${{ inputs.nitro-contracts-version }}"
+          --name "$TESTNODE_NAME"
+          --version "$TESTNODE_VERSION"
+          --snapshot-version "$TESTNODE_SNAPSHOT_VERSION"
+          --variant "$TESTNODE_VARIANT"
+          --nitro-contracts-version "$TESTNODE_NITRO_CONTRACTS_VERSION"
 
       - name: Build publish matrix
         id: matrix
@@ -130,7 +139,7 @@ jobs:
       - name: Install snapshot release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TESTNODE_SNAPSHOT_GH_REPO: ${{ inputs.snapshot-repo || github.repository }}
+          TESTNODE_SNAPSHOT_GH_REPO: ${{ github.event_name == 'push' && github.repository || inputs.snapshot-repo || github.repository }}
         run: >-
           pnpm dev snapshot install --force
           --id "${{ matrix.snapshotId }}"
