@@ -4,21 +4,21 @@
 			"variant": "l3-eth",
 			"snapshotId": "default",
 			"snapshotReleaseTag": "v0.1.6",
-			"version": "v0.2.3",
+			"version": "v0.2.4",
 			"nitroContractsVersion": "v3.2"
 		},
 		"l2": {
 			"variant": "l2",
 			"snapshotId": "l2",
 			"snapshotReleaseTag": "v0.1.6",
-			"version": "v0.2.3",
+			"version": "v0.2.4",
 			"nitroContractsVersion": "v3.2"
 		},
 		"timeboost": {
 			"variant": "l2-timeboost",
 			"snapshotId": "l2-timeboost",
-			"snapshotReleaseTag": "v0.1.6",
-			"version": "v0.2.0",
+			"snapshotReleaseTag": "timeboost-0.1.7",
+			"version": "v0.2.4",
 			"nitroContractsVersion": "v3.2"
 		},
 		"fast": {
