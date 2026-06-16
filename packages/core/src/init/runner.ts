@@ -1,4 +1,3 @@
-import type { ChildProcess } from "node:child_process";
 import { waitForRpc } from "../docker.js";
 import {
 	finishActiveRun,
@@ -8,12 +7,7 @@ import {
 	startRunLoggingFromEnv,
 	updateRunStep,
 } from "../run-logger.js";
-import {
-	resetRuntime,
-	startAnvilWithState,
-	startNitroFromSnapshot,
-	stopRuntime,
-} from "../runtime.js";
+import { resetRuntime, startL1Container, startNitroFromSnapshot, stopRuntime } from "../runtime.js";
 import { installSnapshotRelease } from "../snapshot-release.js";
 import {
 	DEFAULT_SNAPSHOT_ID,
@@ -32,8 +26,6 @@ export { createInitContext, type InitContext } from "./context.js";
 const L1_RPC = "http://127.0.0.1:8545";
 const L2_RPC = "http://127.0.0.1:8547";
 const L3_RPC = "http://127.0.0.1:8549";
-
-let _anvilProcess: ChildProcess | undefined;
 
 async function runInitLoop(
 	runtime: InitRuntime,
@@ -243,7 +235,7 @@ async function runSnapshotRestoreFlow(
 	});
 	restoreSnapshot(runtime.configDir, snapshotId);
 	startRunLoggingFromEnv(runtime.configDir) ?? startInlineRunLogging(runtime.configDir, logArgs);
-	_anvilProcess = startAnvilWithState(runtime.configDir);
+	startL1Container(runtime);
 	await waitForRpc(L1_RPC);
 	await startNitroFromSnapshot(
 		{
@@ -281,7 +273,7 @@ async function finalizeFreshInit(runtime: InitRuntime, snapshotId: string, total
 		configDir: runtime.configDir,
 	});
 	const snapshot = captureSnapshot(runtime.configDir, runtime.composeFile, snapshotId);
-	_anvilProcess = startAnvilWithState(runtime.configDir);
+	startL1Container(runtime);
 	await waitForRpc(L1_RPC);
 	await startNitroFromSnapshot(
 		{
