@@ -11,20 +11,20 @@ Use `start` when you want a disposable local `L1 + L2 + L3` stack from a publish
 Minimal usage:
 
 ```bash
-pnpm dev start --image-version v0.2.2
+pnpm dev start --image-version v0.2.3
 ```
 
 By default that resolves the `l3-eth` variant image:
 
 ```text
-ghcr.io/offchainlabs/arbitrum-testnode-ci:v0.2.2-nc3.2-l3-eth
+ghcr.io/offchainlabs/arbitrum-testnode-ci:v0.2.3-nc3.2-l3-eth
 ```
 
 Config-driven usage:
 
 ```json
 {
-  "version": "v0.2.2",
+  "version": "v0.2.3",
   "l3Enabled": true
 }
 ```
@@ -82,7 +82,7 @@ The action starts a fully initialized testnode and exports environment variables
 
 ```bash
 pnpm install
-pnpm dev start --image-version v0.2.2  # Boot the published testnode image
+pnpm dev start --image-version v0.2.3  # Boot the published testnode image
 pnpm dev init           # First run: deploys everything from scratch (~12 min)
 pnpm dev init           # Subsequent runs: restores from snapshot (~10 sec)
 pnpm dev stop           # Stop all services
@@ -131,15 +131,15 @@ For automatic tag publishes, the snapshot release tag comes from `config/testnod
 Publish the default testnode image automatically:
 
 ```bash
-git tag v0.2.2
-git push origin v0.2.2
+git tag v0.2.3
+git push origin v0.2.3
 ```
 
 Publish one variant image from GitHub Actions:
 
 ```text
 workflow: Publish Testnode
-version: v0.2.2
+version: v0.2.3
 variant: l3-eth
 nitro-contracts-version: v3.2
 snapshot-version: v0.1.6
