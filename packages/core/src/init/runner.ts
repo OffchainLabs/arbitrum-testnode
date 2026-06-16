@@ -181,15 +181,6 @@ function finishFailedInit(result: {
 	return { success: false as const, failedStep: result.failedStep, error: result.error };
 }
 
-function finishFailedInit(result: { failedStep?: string; error?: string }) {
-	finishActiveRun("failed", {
-		exitCode: 1,
-		...(result.error ? { error: result.error } : {}),
-		...(result.failedStep ? { failedStep: result.failedStep } : {}),
-	});
-	return { success: false as const, failedStep: result.failedStep, error: result.error };
-}
-
 function assertValidFeeTokenDecimals(feeTokenDecimals: number | undefined): void {
 	if (
 		feeTokenDecimals !== undefined &&
