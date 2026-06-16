@@ -30,6 +30,7 @@ export const VARIANTS = {
 		name: "l2",
 		description: "L1 + L2 testnode",
 		snapshotId: "l2",
+		snapshotReleaseTag: "v0.1.6",
 		l3Enabled: false,
 		hostPorts: {
 			l1: 8545,
@@ -41,6 +42,7 @@ export const VARIANTS = {
 		name: "l2-timeboost",
 		description: "L1 + L2 testnode with Timeboost enabled on L2",
 		snapshotId: "l2-timeboost",
+		snapshotReleaseTag: "timeboost-0.1.8",
 		l3Enabled: false,
 		timeboostEnabled: true,
 		hostPorts: {
@@ -53,6 +55,7 @@ export const VARIANTS = {
 		name: "l3-eth",
 		description: "L1 + L2 + L3 testnode with ETH gas on L3",
 		snapshotId: "default",
+		snapshotReleaseTag: "v0.1.6",
 		l3Enabled: true,
 		hostPorts: {
 			l1: 8545,
@@ -66,6 +69,7 @@ export const VARIANTS = {
 		name: "l3-custom-6",
 		description: "L1 + L2 + L3 testnode with 6-decimal custom gas token on L3",
 		snapshotId: "l3-custom-6",
+		snapshotReleaseTag: "l3-custom-6",
 		l3Enabled: true,
 		hostPorts: {
 			l1: 8545,
@@ -79,6 +83,7 @@ export const VARIANTS = {
 		name: "l3-custom-16",
 		description: "L1 + L2 + L3 testnode with 16-decimal custom gas token on L3",
 		snapshotId: "l3-custom-16",
+		snapshotReleaseTag: "l3-custom-16",
 		l3Enabled: true,
 		hostPorts: {
 			l1: 8545,
@@ -92,6 +97,7 @@ export const VARIANTS = {
 		name: "l3-custom-18",
 		description: "L1 + L2 + L3 testnode with 18-decimal custom gas token on L3",
 		snapshotId: "l3-custom-18",
+		snapshotReleaseTag: "l3-custom-18",
 		l3Enabled: true,
 		hostPorts: {
 			l1: 8545,
@@ -105,6 +111,7 @@ export const VARIANTS = {
 		name: "l3-custom-20",
 		description: "L1 + L2 + L3 testnode with 20-decimal custom gas token on L3",
 		snapshotId: "l3-custom-20",
+		snapshotReleaseTag: "l3-custom-20",
 		l3Enabled: true,
 		hostPorts: {
 			l1: 8545,

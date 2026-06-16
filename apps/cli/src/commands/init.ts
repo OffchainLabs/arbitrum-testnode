@@ -11,6 +11,10 @@ export const initCli = Cli.create("init", {
 			.boolean()
 			.optional()
 			.describe("Start init in the background and return the run metadata"),
+		captureId: z
+			.string()
+			.optional()
+			.describe("Capture the snapshot under this id instead of the variant-derived default"),
 		feeTokenDecimals: z
 			.number()
 			.optional()
@@ -20,6 +24,10 @@ export const initCli = Cli.create("init", {
 			.boolean()
 			.optional()
 			.describe("Force a full rebuild instead of restoring the default snapshot"),
+		skipPostCaptureVerify: z
+			.boolean()
+			.optional()
+			.describe("Skip the post-capture verify-restart after capturing the snapshot"),
 		snapshotVersion: z
 			.string()
 			.optional()

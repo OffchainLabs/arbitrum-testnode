@@ -6,6 +6,7 @@ export interface VariantDefinition {
 	hostPorts: { l1: number; l2: number; l2Ws: number; l3?: number; l3Ws?: number };
 	l3Enabled: boolean;
 	snapshotId: string;
+	snapshotReleaseTag: string;
 	timeboostEnabled?: boolean;
 }
 

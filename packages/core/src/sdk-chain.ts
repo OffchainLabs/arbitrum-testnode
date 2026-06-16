@@ -127,16 +127,18 @@ export async function deployRollupViaSdk(params: DeployRollupViaSdkParams): Prom
 		owner: params.ownerAddress,
 		chainConfig: chainConfig as PrepareNodeConfigParams["chainConfig"],
 		...(params.wasmModuleRoot ? { wasmModuleRoot: params.wasmModuleRoot } : {}),
-		...(params.feeTokenPricer ? { feeTokenPricer: params.feeTokenPricer } : {}),
 		...(params.stakeToken ? { stakeToken: params.stakeToken } : {}),
 	});
 
+	// feeTokenPricer is a top-level createRollup param (read as params.feeTokenPricer
+	// by the SDK's custom-gas validation), not a deployment-config field.
 	const rollupParams = {
 		config: deploymentConfig,
 		batchPosters: [params.batchPosterAddress],
 		validators: [params.validatorAddress],
 		maxDataSize: Number(params.maxDataSize),
 		...(params.nativeToken ? { nativeToken: params.nativeToken } : {}),
+		...(params.feeTokenPricer ? { feeTokenPricer: params.feeTokenPricer } : {}),
 	} as CreateRollupParams<"v3.2">;
 
 	const result = params.rollupCreatorAddress

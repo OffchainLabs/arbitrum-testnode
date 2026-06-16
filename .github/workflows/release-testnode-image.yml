@@ -60,14 +60,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read code defaults
+        id: defaults
+        run: >-
+          node --input-type=module -e
+          "import { DEFAULT_NITRO_CONTRACTS_VERSION } from './packages/testnode/src/runtime.mjs';
+          const { appendFileSync } = await import('node:fs');
+          appendFileSync(process.env.GITHUB_OUTPUT, 'nitro-contracts-version=' + DEFAULT_NITRO_CONTRACTS_VERSION + '\\n');"
+
       - name: Resolve testnode inputs
         id: resolve
         env:
-          TESTNODE_NAME: ${{ github.event_name == 'push' && 'default' || inputs.name }}
+          # On a tag push, publish every variant. Each variant installs its own
+          # pre-generated snapshot bundle (per-variant snapshotReleaseTag in
+          # runtime.mjs), so snapshot-version here is unused for publishing and
+          # passed only to satisfy resolve-testnode.mjs. The default nitro-contracts
+          # version comes from code (steps.defaults), not a YAML literal.
+          TESTNODE_NAME: ${{ github.event_name == 'push' && '' || inputs.name }}
           TESTNODE_VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
-          TESTNODE_SNAPSHOT_VERSION: ${{ inputs.snapshot-version }}
-          TESTNODE_VARIANT: ${{ inputs.variant }}
-          TESTNODE_NITRO_CONTRACTS_VERSION: ${{ inputs.nitro-contracts-version }}
+          TESTNODE_SNAPSHOT_VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.snapshot-version }}
+          TESTNODE_VARIANT: ${{ github.event_name == 'push' && 'all' || inputs.variant }}
+          TESTNODE_NITRO_CONTRACTS_VERSION: ${{ github.event_name == 'push' && steps.defaults.outputs.nitro-contracts-version || inputs.nitro-contracts-version }}
         run: >-
           node scripts/ci/resolve-testnode.mjs
           --name "$TESTNODE_NAME"
@@ -84,27 +97,25 @@ jobs:
           INPUT_CONTRACTS_VERSION: ${{ steps.resolve.outputs.nitro-contracts-version }}
         run: >-
           node --input-type=module -e
-          "import { VARIANTS } from './packages/testnode/src/runtime.mjs';
+          "import { NITRO_CONTRACTS_VERSIONS, VARIANTS } from './packages/testnode/src/runtime.mjs';
           const names =
           process.env.INPUT_VARIANT === 'all'
           ? Object.keys(VARIANTS)
           : [process.env.INPUT_VARIANT];
           const contractsVersions =
           process.env.INPUT_CONTRACTS_VERSION === 'all'
-          ? ['v2.1', 'v3.2']
+          ? Object.keys(NITRO_CONTRACTS_VERSIONS)
           : [process.env.INPUT_CONTRACTS_VERSION];
           const include = [];
           for (const variant of names) {
             const config = VARIANTS[variant];
             if (!config) throw new Error(\`Unknown variant \${variant}\`);
-            const snapshotReleaseTag = process.env.INPUT_SNAPSHOT_VERSION;
-            if (!snapshotReleaseTag) throw new Error('snapshot-version is required');
             for (const contractsVersion of contractsVersions) {
               include.push({
                 variant,
                 contractsVersion,
                 snapshotId: config.snapshotId,
-                snapshotReleaseTag
+                snapshotReleaseTag: config.snapshotReleaseTag
               });
             }
           }
@@ -137,10 +148,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Install the pre-generated snapshot bundle for this variant. Snapshots are
+      # generated out of band and published as release bundles (the per-variant
+      # snapshotReleaseTag lives in runtime.mjs); the publish never runs init.
       - name: Install snapshot release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TESTNODE_SNAPSHOT_GH_REPO: ${{ github.event_name == 'push' && github.repository || inputs.snapshot-repo || github.repository }}
+          TESTNODE_SNAPSHOT_GH_REPO: ${{ github.repository }}
         run: >-
           pnpm dev snapshot install --force
           --id "${{ matrix.snapshotId }}"

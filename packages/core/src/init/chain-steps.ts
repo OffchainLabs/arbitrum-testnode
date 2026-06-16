@@ -8,7 +8,8 @@ import { writeChainConfig } from "../chain-config.js";
 import { clampDepositAmount } from "../deposit-amount.js";
 import { composeRestart, composeUp, waitForRpc } from "../docker.js";
 import { exec, execOrThrow } from "../exec.js";
-import { deployTestErc20 } from "../fee-token.js";
+import { deployFeeTokenPricer } from "../fee-token-pricer.js";
+import { deployTestErc20, testErc20Abi } from "../fee-token.js";
 import { ZERO_ADDRESS } from "../init-helpers.js";
 import { patchGeneratedL2NodeConfig, patchGeneratedL3NodeConfig } from "../node-config-patches.js";
 import { inboxAbi, publicClient, rollupAbi, walletClient } from "../rpc.js";
@@ -498,6 +499,75 @@ async function fundL3DeployerAccounts(): Promise<void> {
 	}
 }
 
+async function deployCustomFeeToken(
+	feeTokenDecimals?: number,
+): Promise<{ feeTokenAddress?: string; feeTokenPricerAddress?: string }> {
+	if (feeTokenDecimals === undefined) {
+		return {};
+	}
+	const mintAmount = 10n ** BigInt(feeTokenDecimals) * 1_000_000_000n;
+	const feeTokenAddress = await deployTestErc20({
+		rpcUrl: L2_RPC,
+		deployerKey: accounts.userFeeTokenDeployer.privateKey,
+		name: `TestCustomFeeToken${feeTokenDecimals}`,
+		symbol: `FEE${feeTokenDecimals}`,
+		decimals: feeTokenDecimals,
+		initialMintAddresses: [
+			accounts.userFeeTokenDeployer.address,
+			accounts.funnel.address,
+			accounts.l3owner.address,
+		],
+		mintAmountPerAddress: mintAmount,
+	});
+	console.log(
+		`[init] Custom fee token deployed at ${feeTokenAddress} with ${feeTokenDecimals} decimals`,
+	);
+	// Custom-gas Rollup chains require a non-zero feeTokenPricer.
+	// Deploy a constant-rate pricer on the parent chain (L2), using
+	// the same deployer key the rollup uses.
+	// feeTokenPricer = "1e18 (1:1 constant)" exchange rate.
+	const feeTokenPricerAddress = await deployFeeTokenPricer({
+		rpcUrl: L2_RPC,
+		deployerKey: accounts.l3owner.privateKey,
+		exchangeRate: 1000000000000000000n,
+	});
+	console.log(`[init] Custom fee token pricer deployed at ${feeTokenPricerAddress}`);
+	return { feeTokenAddress, feeTokenPricerAddress };
+}
+
+// Custom-gas L3s use an ERC20Inbox whose depositEth() reverts. The native fee
+// token must instead be approved to the inbox and deposited via depositERC20().
+async function depositFeeTokenToL3Inbox(nativeToken: Address, inbox: Address): Promise<void> {
+	const l2Pub = publicClient(L2_RPC);
+	const l2Client = walletClient(L2_RPC, accounts.funnel.privateKey);
+	const funnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
+	const feeTokenBalance = (await l2Pub.readContract({
+		address: nativeToken,
+		abi: testErc20Abi,
+		functionName: "balanceOf",
+		args: [accounts.funnel.address],
+	})) as bigint;
+	const depositAmount = feeTokenBalance / 2n;
+	console.log(`[init] Approving ${depositAmount} fee tokens to ERC20 inbox ${inbox}`);
+	const approveHash = await l2Client.writeContract({
+		account: funnelAccount,
+		address: nativeToken,
+		abi: testErc20Abi,
+		functionName: "approve",
+		args: [inbox, depositAmount],
+	});
+	await l2Pub.waitForTransactionReceipt({ hash: approveHash });
+	console.log(`[init] Depositing ${depositAmount} fee tokens into L3 ERC20 inbox`);
+	const depositHash = await l2Client.writeContract({
+		account: funnelAccount,
+		address: inbox,
+		abi: inboxAbi,
+		functionName: "depositERC20",
+		args: [depositAmount],
+	});
+	await l2Pub.waitForTransactionReceipt({ hash: depositHash });
+}
+
 function createL3Steps(
 	runtime: InitRuntime,
 	feeTokenDecimals?: number,
@@ -511,27 +581,9 @@ function createL3Steps(
 			});
 			await applyGasEstimationWorkaround();
 
-			// If custom fee token is requested, deploy an ERC20 on L2
-			let feeTokenAddress: string | undefined;
-			if (feeTokenDecimals !== undefined) {
-				const mintAmount = 10n ** BigInt(feeTokenDecimals) * 1_000_000_000n;
-				feeTokenAddress = await deployTestErc20({
-					rpcUrl: L2_RPC,
-					deployerKey: accounts.userFeeTokenDeployer.privateKey,
-					name: `TestCustomFeeToken${feeTokenDecimals}`,
-					symbol: `FEE${feeTokenDecimals}`,
-					decimals: feeTokenDecimals,
-					initialMintAddresses: [
-						accounts.userFeeTokenDeployer.address,
-						accounts.funnel.address,
-						accounts.l3owner.address,
-					],
-					mintAmountPerAddress: mintAmount,
-				});
-				console.log(
-					`[init] Custom fee token deployed at ${feeTokenAddress} with ${feeTokenDecimals} decimals`,
-				);
-			}
+			// If custom fee token is requested, deploy an ERC20 + pricer on L2
+			const { feeTokenAddress, feeTokenPricerAddress } =
+				await deployCustomFeeToken(feeTokenDecimals);
 
 			const rollupCreatorDeployment = await deployRollupCreatorViaDocker(runtime, {
 				hostParentRpc: L2_RPC,
@@ -560,6 +612,9 @@ function createL3Steps(
 				rollupCreatorAddress: rollupCreatorDeployment.rollupCreator,
 				stakeToken: rollupCreatorDeployment.stakeToken,
 				...(feeTokenAddress ? { nativeToken: feeTokenAddress as `0x${string}` } : {}),
+				...(feeTokenPricerAddress
+					? { feeTokenPricer: feeTokenPricerAddress as `0x${string}` }
+					: {}),
 			});
 
 			copyConfigFile(runtime, "l3_deployment.json", "l3deployment.json");
@@ -658,23 +713,34 @@ function createL3Steps(
 				});
 			}
 			const inbox = rollupData["inbox"] as Address;
-			const balanceWei = await getBalanceWei(accounts.funnel.address, L2_RPC);
-			const depositWei = clampDepositAmount({
-				balanceWei,
-				desiredWei: L3_DEPOSIT_TARGET_WEI,
-				reserveWei: L3_DEPOSIT_RESERVE_WEI,
-			});
-			console.log(`[init] Depositing ${depositWei} wei from L2 into L3 inbox`);
-			const funnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
-			const l2Client = walletClient(L2_RPC, accounts.funnel.privateKey);
-			await l2Client.writeContract({
-				account: funnelAccount,
-				address: inbox,
-				abi: inboxAbi,
-				functionName: "depositEth",
-				value: depositWei,
-			});
-			await waitForBalanceAtLeast(accounts.funnel.address, L3_RPC, L3_DEPOSIT_READY_THRESHOLD_WEI);
+			const nativeToken = (rollupData["feeTokenAddress"] as Address | undefined) ?? ZERO_ADDRESS;
+			const isCustomGas = nativeToken !== ZERO_ADDRESS;
+			if (isCustomGas) {
+				await depositFeeTokenToL3Inbox(nativeToken, inbox);
+				await waitForBalanceAtLeast(accounts.funnel.address, L3_RPC, parseEther("1"));
+			} else {
+				const balanceWei = await getBalanceWei(accounts.funnel.address, L2_RPC);
+				const depositWei = clampDepositAmount({
+					balanceWei,
+					desiredWei: L3_DEPOSIT_TARGET_WEI,
+					reserveWei: L3_DEPOSIT_RESERVE_WEI,
+				});
+				console.log(`[init] Depositing ${depositWei} wei from L2 into L3 inbox`);
+				const funnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
+				const l2Client = walletClient(L2_RPC, accounts.funnel.privateKey);
+				await l2Client.writeContract({
+					account: funnelAccount,
+					address: inbox,
+					abi: inboxAbi,
+					functionName: "depositEth",
+					value: depositWei,
+				});
+				await waitForBalanceAtLeast(
+					accounts.funnel.address,
+					L3_RPC,
+					L3_DEPOSIT_READY_THRESHOLD_WEI,
+				);
+			}
 			// Fund userFeeTokenDeployer on L3 so portal E2E tests can use it as a funder
 			const l3Client = walletClient(L3_RPC, accounts.funnel.privateKey);
 			const l3FunnelAccount = privateKeyToAccount(accounts.funnel.privateKey);
