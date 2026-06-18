@@ -5,10 +5,7 @@ import {
 	readTextLogTail,
 } from "@arbitrum/testnode-core/run-logger.js";
 import { Cli, z } from "incur";
-import { findProjectRoot } from "../project-root.js";
-
-const PROJECT_ROOT = findProjectRoot();
-const CONFIG_DIR = resolve(PROJECT_ROOT, "config");
+import { projectRoot } from "../project-root.js";
 
 export const logsCli = Cli.create("logs", {
 	description: "Show the latest init run logs",
@@ -17,6 +14,7 @@ export const logsCli = Cli.create("logs", {
 		raw: z.boolean().optional().describe("Read the plain text output log instead of JSON events"),
 	}),
 	run(c) {
+		const CONFIG_DIR = resolve(projectRoot(), "config");
 		const run = loadCurrentRun(CONFIG_DIR);
 		if (!run) {
 			return { success: false, error: "No init run found" };

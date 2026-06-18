@@ -1,63 +1,35 @@
 #!/usr/bin/env node
 
-import { CLI_METADATA, COMMAND_REGISTRY, findCommand } from "./commands/registry.js";
+import { readFileSync } from "node:fs";
+import { Cli } from "incur";
+import { cleanCli } from "./commands/clean.js";
+import { initCli } from "./commands/init.js";
+import { logsCli } from "./commands/logs.js";
+import { snapshotCli } from "./commands/snapshot.js";
+import { startCli } from "./commands/start.js";
+import { statusCli } from "./commands/status.js";
+import { stopCli } from "./commands/stop.js";
 
-async function run(argv = process.argv.slice(2)): Promise<void> {
-	const [command] = argv;
+const { version } = JSON.parse(
+	readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+) as { version: string };
 
-	const entry = findCommand(command);
-	if (entry?.group === "start") {
-		const { createStartCli } = await import("./start-cli.js");
-		await (await createStartCli()).serve(argv);
-		return;
-	}
-
-	if (!command || command === "--help" || command === "-h" || command === "help") {
-		printTopLevelHelp();
-		return;
-	}
-
-	if (command === "--version" || command === "-v") {
-		process.stdout.write(`${CLI_METADATA.version}\n`);
-		return;
-	}
-
-	if (entry?.group === "local") {
-		const { createLocalCli } = await import("./local-cli.js");
-		await (await createLocalCli()).serve(argv);
-		return;
-	}
-
-	printTopLevelHelp();
-	process.stderr.write(`\nUnknown command: ${command}\n`);
-	process.exitCode = 1;
+export function createCli() {
+	return Cli.create("testnode", {
+		description: "Minimal Arbitrum testnode (L1 + L2 + L3)",
+		version,
+		sync: { suggestions: ["boot a testnode with start", "capture a snapshot"] },
+		mcp: { agents: ["claude-code"] },
+	})
+		.command(startCli)
+		.command(initCli)
+		.command(logsCli)
+		.command(snapshotCli)
+		.command(statusCli)
+		.command(stopCli)
+		.command(cleanCli);
 }
 
-function printTopLevelHelp(): void {
-	process.stdout.write(`${CLI_METADATA.description}
-
-Usage:
-  ${CLI_METADATA.name} <command> [options]
-
-Commands:
-${formatCommandHelp()}
-
-Options:
-  -h, --help     Show help
-  -v, --version  Show version
-`);
+if (import.meta.url === `file://${process.argv[1]}`) {
+	createCli().serve();
 }
-
-function formatCommandHelp(): string {
-	const width = Math.max(...COMMAND_REGISTRY.map((command) => command.name.length));
-	return COMMAND_REGISTRY.map(
-		(command) => `  ${command.name.padEnd(width)}  ${command.summary}`,
-	).join("\n");
-}
-
-run().catch((error) => {
-	process.stderr.write(
-		`${error instanceof Error ? error.stack || error.message : String(error)}\n`,
-	);
-	process.exitCode = 1;
-});
