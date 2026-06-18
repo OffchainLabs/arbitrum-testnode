@@ -22,6 +22,16 @@ async function run(argv = process.argv.slice(2)): Promise<void> {
 		return;
 	}
 
+	if (command === "skills") {
+		if (argv[1] === "add") {
+			const { runSkillsAdd } = await import("./commands/skills.js");
+			await runSkillsAdd();
+			return;
+		}
+		process.stdout.write(`Usage:\n  ${CLI_METADATA.name} skills add\n`);
+		return;
+	}
+
 	if (entry?.group === "local") {
 		const { createLocalCli } = await import("./local-cli.js");
 		await (await createLocalCli()).serve(argv);
@@ -49,10 +59,12 @@ Options:
 }
 
 function formatCommandHelp(): string {
-	const width = Math.max(...COMMAND_REGISTRY.map((command) => command.name.length));
-	return COMMAND_REGISTRY.map(
-		(command) => `  ${command.name.padEnd(width)}  ${command.summary}`,
-	).join("\n");
+	const entries = [
+		...COMMAND_REGISTRY.map((command) => ({ name: command.name, summary: command.summary })),
+		{ name: "skills add", summary: "Sync skill files to your agent" },
+	];
+	const width = Math.max(...entries.map((entry) => entry.name.length));
+	return entries.map((entry) => `  ${entry.name.padEnd(width)}  ${entry.summary}`).join("\n");
 }
 
 run().catch((error) => {
