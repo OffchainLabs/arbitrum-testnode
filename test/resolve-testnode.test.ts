@@ -31,6 +31,37 @@ afterEach(() => {
 });
 
 describe("resolve-testnode", () => {
+	it("uses the CLI package version when no image version is provided", () => {
+		const dir = createTempDir();
+		const outputPath = join(dir, "github-output");
+
+		execFileSync(
+			"node",
+			[
+				resolve("scripts/ci/resolve-testnode.mjs"),
+				"--name",
+				"default",
+				"--snapshot-version",
+				"v0.1.6",
+			],
+			{
+				cwd: resolve("."),
+				env: { ...process.env, GITHUB_OUTPUT: outputPath },
+				stdio: "pipe",
+			},
+		);
+
+		const packageJson = JSON.parse(readFileSync("apps/cli/package.json", "utf-8")) as {
+			version?: string;
+		};
+		expect(readOutputs(outputPath)).toEqual({
+			"nitro-contracts-version": "v3.2",
+			"snapshot-version": "v0.1.6",
+			variant: "l3-eth",
+			version: `v${packageJson.version}`,
+		});
+	});
+
 	it("uses the default testnode config with a tag-provided version", () => {
 		const dir = createTempDir();
 		const outputPath = join(dir, "github-output");
@@ -50,6 +81,24 @@ describe("resolve-testnode", () => {
 			"snapshot-version": "v0.1.6",
 			variant: "l3-eth",
 			version: "v1.2.3",
+		});
+	});
+
+	it("allows named config entries to override the package version", () => {
+		const dir = createTempDir();
+		const outputPath = join(dir, "github-output");
+
+		execFileSync("node", [resolve("scripts/ci/resolve-testnode.mjs"), "--name", "fast"], {
+			cwd: resolve("."),
+			env: { ...process.env, GITHUB_OUTPUT: outputPath },
+			stdio: "pipe",
+		});
+
+		expect(readOutputs(outputPath)).toEqual({
+			"nitro-contracts-version": "v3.2",
+			"snapshot-version": "v0.1.6",
+			variant: "l3-eth",
+			version: "dl-ci-fast-2",
 		});
 	});
 

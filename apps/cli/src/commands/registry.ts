@@ -1,12 +1,13 @@
 import type { Cli as IncurCli } from "incur";
+import { PACKAGE_METADATA } from "../package-metadata.js";
 
 export type CommandGroup = "local" | "start";
 export type LoadedCommand = IncurCli.Root & { name: string };
 
 export const CLI_METADATA = {
-	description: "Minimal Arbitrum testnode (L1 + L2 + L3)",
+	description: "Arbitrum testnode (L1 + L2 + L3)",
 	name: "testnode",
-	version: "0.1.0",
+	version: PACKAGE_METADATA.version,
 } as const;
 
 export interface CommandEntry {

@@ -2,19 +2,32 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolveStartInput, runStart } from "../src/commands/start.js";
+import { DEFAULT_START_IMAGE_VERSION, resolveStartInput, runStart } from "../src/commands/start.js";
 
 describe("resolveStartInput", () => {
 	it("uses start defaults without a config file", () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "start-defaults-"));
 
-		const resolved = resolveStartInput({ imageVersion: "v1.2.3" }, cwd);
+		const resolved = resolveStartInput({}, cwd);
 
 		expect(resolved.configPath).toBeUndefined();
 		expect(resolved.l3Enabled).toBe(true);
 		expect(resolved.timeboostEnabled).toBe(false);
 		expect(resolved.startupTimeoutSeconds).toBe(120);
 		expect(resolved.networkConfigPaths).toEqual([]);
+		expect(resolved.version).toBe(DEFAULT_START_IMAGE_VERSION);
+	});
+
+	it("derives the built-in default image version from the CLI package version", () => {
+		const cliPackage = JSON.parse(fs.readFileSync("apps/cli/package.json", "utf-8")) as {
+			version?: string;
+		};
+		const catalog = JSON.parse(fs.readFileSync("config/testnodes.json", "utf-8")) as {
+			testnodes?: { default?: { version?: string } };
+		};
+
+		expect(DEFAULT_START_IMAGE_VERSION).toBe(`v${cliPackage.version}`);
+		expect(catalog.testnodes?.default?.version).toBeUndefined();
 	});
 
 	it("loads the default config file and resolves relative paths from its directory", () => {
@@ -92,11 +105,9 @@ describe("resolveStartInput", () => {
 		]);
 	});
 
-	it("requires a version from flags or config", () => {
+	it("uses the default image version when flags and config omit one", () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "start-version-"));
-		expect(() => resolveStartInput({}, cwd)).toThrow(
-			"start requires image version via --image-version or testnode.start.json",
-		);
+		expect(resolveStartInput({}, cwd).version).toBe(DEFAULT_START_IMAGE_VERSION);
 	});
 });
 
