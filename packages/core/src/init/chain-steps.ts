@@ -46,8 +46,6 @@ const CONTRACT_DEPLOYER_POLLING_INTERVAL_MS = 100;
 const CONTRACT_DEPLOYER_CREATE2_CONFIRMATIONS = 1;
 const WASM_MODULE_ROOT = "0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a";
 
-let contractDeployerImageBuilt = false;
-
 interface RollupCreatorDeployment {
 	rollupCreator: Address;
 	stakeToken: Address;
@@ -76,41 +74,45 @@ import {
 	waitForL3RpcWithParentChainNudges,
 } from "./support.js";
 
+const builtContractDeployerImages = new Set<string>();
+
 async function ensureContractDeployerImage(
 	runtime: InitRuntime,
+	image: string = CONTRACT_DEPLOYER_IMAGE,
+	dockerfile = "docker/contract-deployer.Dockerfile",
 	forceRebuild = false,
 ): Promise<void> {
-	if (contractDeployerImageBuilt && !forceRebuild) {
-		console.log(`[init] Contract deployer image already checked: ${CONTRACT_DEPLOYER_IMAGE}`);
+	if (builtContractDeployerImages.has(image) && !forceRebuild) {
+		console.log(`[init] Contract deployer image already checked: ${image}`);
 		return;
 	}
 	if (!forceRebuild) {
-		console.log(`[init] Checking contract deployer image: ${CONTRACT_DEPLOYER_IMAGE}`);
-		const inspect = exec("docker", ["image", "inspect", CONTRACT_DEPLOYER_IMAGE], {
+		console.log(`[init] Checking contract deployer image: ${image}`);
+		const inspect = exec("docker", ["image", "inspect", image], {
 			timeout: 30_000,
 		});
 		if (inspect.exitCode === 0) {
-			console.log(`[init] Contract deployer image found: ${CONTRACT_DEPLOYER_IMAGE}`);
-			contractDeployerImageBuilt = true;
+			console.log(`[init] Contract deployer image found: ${image}`);
+			builtContractDeployerImages.add(image);
 			return;
 		}
 	}
-	console.log(`[init] Building contract deployer image: ${CONTRACT_DEPLOYER_IMAGE}`);
+	console.log(`[init] Building contract deployer image: ${image}`);
 	execOrThrow(
 		"docker",
 		[
 			"build",
 			"--progress=plain",
 			"-t",
-			CONTRACT_DEPLOYER_IMAGE,
+			image,
 			"-f",
-			resolve(runtime.projectRoot, "docker/contract-deployer.Dockerfile"),
+			resolve(runtime.projectRoot, dockerfile),
 			resolve(runtime.projectRoot, "docker"),
 		],
 		{ timeout: 1_800_000 },
 	);
-	console.log(`[init] Contract deployer image built: ${CONTRACT_DEPLOYER_IMAGE}`);
-	contractDeployerImageBuilt = true;
+	console.log(`[init] Contract deployer image built: ${image}`);
+	builtContractDeployerImages.add(image);
 }
 
 async function deployRollupCreatorViaDocker(
@@ -120,11 +122,15 @@ async function deployRollupCreatorViaDocker(
 		dockerParentRpc: string;
 		deployerKey: string;
 		maxDataSize: string;
+		image?: string;
+		dockerfile?: string;
 		retryAfterImageRebuild?: boolean;
 	},
 ): Promise<RollupCreatorDeployment> {
 	const retryAfterImageRebuild = params.retryAfterImageRebuild ?? true;
-	await ensureContractDeployerImage(runtime);
+	const image = params.image ?? CONTRACT_DEPLOYER_IMAGE;
+	const dockerfile = params.dockerfile ?? "docker/contract-deployer.Dockerfile";
+	await ensureContractDeployerImage(runtime, image, dockerfile);
 	await waitForRpc(params.hostParentRpc);
 	console.log(`[init] Deploying RollupCreator on ${params.dockerParentRpc}`);
 	const args = [
@@ -148,7 +154,7 @@ async function deployRollupCreatorViaDocker(
 		`CREATE2_CONFIRMATIONS=${CONTRACT_DEPLOYER_CREATE2_CONFIRMATIONS}`,
 		"-e",
 		"ROLLUP_CREATOR_OUTPUT=/config/rollup_creator.json",
-		CONTRACT_DEPLOYER_IMAGE,
+		image,
 		"hardhat",
 		"run",
 		"--no-compile",
@@ -165,7 +171,7 @@ async function deployRollupCreatorViaDocker(
 	if (!output.stakeToken) {
 		if (retryAfterImageRebuild) {
 			console.warn("[init] Contract deployer image is stale; rebuilding and retrying once");
-			await ensureContractDeployerImage(runtime, true);
+			await ensureContractDeployerImage(runtime, image, dockerfile, true);
 			return deployRollupCreatorViaDocker(runtime, {
 				...params,
 				retryAfterImageRebuild: false,
@@ -501,6 +507,7 @@ async function fundL3DeployerAccounts(): Promise<void> {
 
 async function deployCustomFeeToken(
 	feeTokenDecimals?: number,
+	deployPricer = true,
 ): Promise<{ feeTokenAddress?: string; feeTokenPricerAddress?: string }> {
 	if (feeTokenDecimals === undefined) {
 		return {};
@@ -522,6 +529,10 @@ async function deployCustomFeeToken(
 	console.log(
 		`[init] Custom fee token deployed at ${feeTokenAddress} with ${feeTokenDecimals} decimals`,
 	);
+	if (!deployPricer) {
+		// v2.1 AnyTrust custom-gas rollups have no feeTokenPricer parameter.
+		return { feeTokenAddress };
+	}
 	// Custom-gas Rollup chains require a non-zero feeTokenPricer.
 	// Deploy a constant-rate pricer on the parent chain (L2), using
 	// the same deployer key the rollup uses.
@@ -571,25 +582,36 @@ async function depositFeeTokenToL3Inbox(nativeToken: Address, inbox: Address): P
 function createL3Steps(
 	runtime: InitRuntime,
 	feeTokenDecimals?: number,
+	nitroContractsVersion?: string,
 ): Record<string, StepRunner> {
+	const isV21 = nitroContractsVersion === "v2.1";
 	return {
 		"deploy-l3-rollup": async (state) => {
 			await fundL3DeployerAccounts();
 			writeChainConfig(runtime.configDir, "l3_chain_config.json", {
 				chainId: 333333,
 				owner: accounts.l3owner.address,
+				...(isV21 ? { dataAvailabilityCommittee: true } : {}),
 			});
 			await applyGasEstimationWorkaround();
 
-			// If custom fee token is requested, deploy an ERC20 + pricer on L2
-			const { feeTokenAddress, feeTokenPricerAddress } =
-				await deployCustomFeeToken(feeTokenDecimals);
+			// If custom fee token is requested, deploy an ERC20 (+ pricer for v3.2) on L2
+			const { feeTokenAddress, feeTokenPricerAddress } = await deployCustomFeeToken(
+				feeTokenDecimals,
+				!isV21,
+			);
 
 			const rollupCreatorDeployment = await deployRollupCreatorViaDocker(runtime, {
 				hostParentRpc: L2_RPC,
 				dockerParentRpc: L2_RPC_DOCKER,
 				deployerKey: accounts.l3owner.privateKey,
 				maxDataSize: "104857",
+				...(isV21
+					? {
+							image: "nitro-testnode-contract-deployer-v2.1:latest",
+							dockerfile: "docker/contract-deployer-v2.1.Dockerfile",
+						}
+					: {}),
 			});
 			await deployRollupViaSdk({
 				chainConfigPath: resolve(runtime.configDir, "l3_chain_config.json"),
@@ -611,6 +633,7 @@ function createL3Steps(
 				rawNodeConfigOutputPath: resolve(runtime.configDir, "l3-nodeConfig.raw.json"),
 				rollupCreatorAddress: rollupCreatorDeployment.rollupCreator,
 				stakeToken: rollupCreatorDeployment.stakeToken,
+				nitroContractsVersion: isV21 ? "v2.1" : "v3.2",
 				...(feeTokenAddress ? { nativeToken: feeTokenAddress as `0x${string}` } : {}),
 				...(feeTokenPricerAddress
 					? { feeTokenPricer: feeTokenPricerAddress as `0x${string}` }
@@ -785,11 +808,12 @@ function createL3Steps(
 export function makeStepRunners(
 	runtime: InitRuntime,
 	feeTokenDecimals?: number,
+	nitroContractsVersion?: string,
 ): Record<string, StepRunner> {
 	return {
 		...createL1Steps(runtime),
 		...createL2DeploySteps(runtime),
 		...createL2RuntimeSteps(runtime),
-		...createL3Steps(runtime, feeTokenDecimals),
+		...createL3Steps(runtime, feeTokenDecimals, nitroContractsVersion),
 	};
 }
