@@ -8,8 +8,10 @@ import {
 	copyNetworkConfigPaths,
 } from "@arbitrum/testnode";
 import { Cli, z } from "incur";
+import { DEFAULT_START_IMAGE_VERSION } from "../package-metadata.js";
 
 const DEFAULT_CONFIG_BASENAME = "testnode.start.json";
+export { DEFAULT_START_IMAGE_VERSION };
 
 const startFileSchema = z.object({
 	containerName: z.string().optional(),
@@ -109,15 +111,11 @@ export function loadStartFileConfig(
 	return { config: startFileSchema.parse(raw), path: resolvedPath };
 }
 
-function requireStartVersion(
+function resolveStartVersion(
 	imageVersion: string | undefined,
 	fileVersion: string | undefined,
 ): string {
-	const version = imageVersion ?? fileVersion;
-	if (!version) {
-		throw new Error("start requires image version via --image-version or testnode.start.json");
-	}
-	return version;
+	return imageVersion ?? fileVersion ?? DEFAULT_START_IMAGE_VERSION;
 }
 
 function resolveMergedOutputDir(params: {
@@ -185,7 +183,7 @@ export function resolveStartInput(
 		}),
 		startupTimeoutSeconds: options.startupTimeoutSeconds ?? fileConfig.startupTimeoutSeconds ?? 120,
 		timeboostEnabled: options.timeboostEnabled ?? fileConfig.timeboostEnabled ?? false,
-		version: requireStartVersion(options.imageVersion, fileConfig.version),
+		version: resolveStartVersion(options.imageVersion, fileConfig.version),
 	};
 }
 

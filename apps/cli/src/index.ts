@@ -16,7 +16,7 @@ const { version } = JSON.parse(
 
 export function createCli() {
 	return Cli.create("testnode", {
-		description: "Minimal Arbitrum testnode (L1 + L2 + L3)",
+		description: "Arbitrum testnode (L1 + L2 + L3)",
 		version,
 		sync: { suggestions: ["boot a testnode with start", "capture a snapshot"] },
 		mcp: { agents: ["claude-code"] },

@@ -11,16 +11,16 @@ Use `start` when you want a disposable local `L1 + L2 + L3` stack from a publish
 Minimal usage:
 
 ```bash
-pnpm dev start --image-version v0.2.3
+pnpm dev start
 ```
 
-By default that resolves the `l3-eth` variant image:
+By default, `start` uses the CLI package version as the image version and resolves the `l3-eth` variant image:
 
 ```text
-ghcr.io/offchainlabs/arbitrum-testnode-ci:v0.2.3-nc3.2-l3-eth
+ghcr.io/offchainlabs/arbitrum-testnode-ci:v0.2.5-nc3.2-l3-eth
 ```
 
-Config-driven usage:
+Config-driven usage can pin a different image version:
 
 ```json
 {
@@ -39,7 +39,7 @@ Optional config fields:
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `version` | — | Required testnode image release version |
+| `version` | CLI package version | Testnode image release version override |
 | `l3Enabled` | `true` | Boot the L3-enabled testnode |
 | `feeTokenDecimals` | — | Custom L3 fee token decimals (`6`, `16`, `18`, `20`) |
 | `nitroContractsVersion` | `v3.2` | Nitro contracts version tag component |
@@ -86,7 +86,7 @@ Snapshots built by `init --timeboost-enabled` deploy a local Timeboost `ExpressL
 
 ```bash
 pnpm install
-pnpm dev start --image-version v0.2.3  # Boot the published testnode image
+pnpm dev start           # Boot the published testnode image
 pnpm dev init           # First run: deploys everything from scratch (~12 min)
 pnpm dev init           # Subsequent runs: restores from snapshot (~10 sec)
 pnpm dev stop           # Stop all services

@@ -1,5 +1,13 @@
 import { appendFileSync, readFileSync } from "node:fs";
 
+function defaultImageVersion() {
+	const pkg = JSON.parse(readFileSync("apps/cli/package.json", "utf-8"));
+	if (!pkg.version) {
+		throw new Error("apps/cli/package.json is missing version");
+	}
+	return `v${pkg.version}`;
+}
+
 function readArg(name) {
 	const index = process.argv.indexOf(name);
 	if (index === -1) {
@@ -19,16 +27,13 @@ if (name) {
 }
 
 const resolved = {
-	version: readArg("--version") || entry.version || "",
+	version: readArg("--version") || entry.version || defaultImageVersion(),
 	"snapshot-version": readArg("--snapshot-version") || entry.snapshotReleaseTag || "",
 	variant: readArg("--variant") || entry.variant || "",
 	"nitro-contracts-version":
 		readArg("--nitro-contracts-version") || entry.nitroContractsVersion || "",
 };
 
-if (!resolved.version) {
-	throw new Error("version is required (pass --version or a --name with a version)");
-}
 if (!resolved["snapshot-version"]) {
 	throw new Error("snapshot-version is required (pass --snapshot-version or a --name)");
 }
