@@ -1,8 +1,6 @@
 import { createInitContext, runInitCommand } from "@arbitrum/testnode-core/init-runner.js";
 import { Cli, z } from "incur";
-import { findProjectRoot } from "../project-root.js";
-
-const PROJECT_ROOT = findProjectRoot();
+import { projectRoot } from "../project-root.js";
 
 export const initCli = Cli.create("init", {
 	description: "Initialize the testnode (L1 + L2 + L3 with bridges)",
@@ -20,6 +18,10 @@ export const initCli = Cli.create("init", {
 			.optional()
 			.describe("Deploy a custom fee token ERC20 on L2 with this many decimals (6, 16, 18, or 20)"),
 		foreground: z.boolean().optional().describe("Internal worker mode for detached init runs"),
+		nitroContractsVersion: z
+			.string()
+			.optional()
+			.describe("Nitro contracts version for the L3 rollup (e.g. v2.1, v3.2). Default v3.2."),
 		rebuild: z
 			.boolean()
 			.optional()
@@ -38,6 +40,6 @@ export const initCli = Cli.create("init", {
 			.describe("Deploy Timeboost contracts and restart L2 with Timeboost enabled"),
 	}),
 	async run(c) {
-		return runInitCommand(c.options, createInitContext(PROJECT_ROOT));
+		return runInitCommand(c.options, createInitContext(projectRoot()));
 	},
 });

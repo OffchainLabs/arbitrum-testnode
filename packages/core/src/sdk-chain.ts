@@ -55,6 +55,7 @@ export interface DeployRollupViaSdkParams {
 	feeTokenPricer?: Address;
 	stakeToken?: Address;
 	rollupCreatorAddress?: Address;
+	nitroContractsVersion?: "v2.1" | "v3.2";
 }
 
 type DeploymentForNodeConfig = Partial<CreateChainDeployment> &
@@ -122,24 +123,36 @@ export async function deployRollupViaSdk(params: DeployRollupViaSdkParams): Prom
 	>;
 	const account = privateKeyToAccount(params.ownerKey);
 	const parentChainPublicClient = publicClient(params.parentRpcUrl);
-	const deploymentConfig = createRollupPrepareDeploymentParamsConfig(parentChainPublicClient, {
-		chainId: BigInt(params.chainId),
-		owner: params.ownerAddress,
-		chainConfig: chainConfig as PrepareNodeConfigParams["chainConfig"],
-		...(params.wasmModuleRoot ? { wasmModuleRoot: params.wasmModuleRoot } : {}),
-		...(params.stakeToken ? { stakeToken: params.stakeToken } : {}),
-	});
+	const version = params.nitroContractsVersion ?? "v3.2";
+	const deploymentConfig = createRollupPrepareDeploymentParamsConfig(
+		parentChainPublicClient,
+		{
+			chainId: BigInt(params.chainId),
+			owner: params.ownerAddress,
+			chainConfig: chainConfig as PrepareNodeConfigParams["chainConfig"],
+			...(params.wasmModuleRoot ? { wasmModuleRoot: params.wasmModuleRoot } : {}),
+			...(params.stakeToken ? { stakeToken: params.stakeToken } : {}),
+		},
+		version,
+	);
 
 	// feeTokenPricer is a top-level createRollup param (read as params.feeTokenPricer
-	// by the SDK's custom-gas validation), not a deployment-config field.
-	const rollupParams = {
+	// by the SDK's custom-gas validation), not a deployment-config field. v2.1's
+	// CreateRollupParams has no feeTokenPricer field, so omit it entirely there.
+	const baseRollupParams = {
 		config: deploymentConfig,
 		batchPosters: [params.batchPosterAddress],
 		validators: [params.validatorAddress],
 		maxDataSize: Number(params.maxDataSize),
 		...(params.nativeToken ? { nativeToken: params.nativeToken } : {}),
-		...(params.feeTokenPricer ? { feeTokenPricer: params.feeTokenPricer } : {}),
-	} as CreateRollupParams<"v3.2">;
+	};
+	const rollupParams: CreateRollupParams<"v2.1"> | CreateRollupParams<"v3.2"> =
+		version === "v2.1"
+			? (baseRollupParams as CreateRollupParams<"v2.1">)
+			: ({
+					...baseRollupParams,
+					...(params.feeTokenPricer ? { feeTokenPricer: params.feeTokenPricer } : {}),
+				} as CreateRollupParams<"v3.2">);
 
 	const result = params.rollupCreatorAddress
 		? await createRollupWithCreatorOverride({
@@ -147,11 +160,13 @@ export async function deployRollupViaSdk(params: DeployRollupViaSdkParams): Prom
 				account,
 				parentChainPublicClient,
 				rollupCreatorAddress: params.rollupCreatorAddress,
+				version,
 			})
 		: await createRollup({
 				params: rollupParams,
 				account,
 				parentChainPublicClient,
+				rollupCreatorVersion: version,
 			});
 
 	const stakeToken = await normalizeStakeTokenAddress(
@@ -215,10 +230,11 @@ export async function deployRollupViaSdk(params: DeployRollupViaSdkParams): Prom
 }
 
 async function createRollupWithCreatorOverride(input: {
-	params: CreateRollupParams<"v3.2">;
+	params: CreateRollupParams<"v2.1"> | CreateRollupParams<"v3.2">;
 	account: ReturnType<typeof privateKeyToAccount>;
 	parentChainPublicClient: ReturnType<typeof publicClient>;
 	rollupCreatorAddress: Address;
+	version: "v2.1" | "v3.2";
 }): Promise<CreateRollupResults> {
 	const nativeToken = input.params["nativeToken"];
 	if (nativeToken && nativeToken !== ZERO_ADDRESS) {
@@ -227,7 +243,7 @@ async function createRollupWithCreatorOverride(input: {
 			account: input.account.address,
 			publicClient: input.parentChainPublicClient,
 			rollupCreatorAddressOverride: input.rollupCreatorAddress,
-			rollupCreatorVersion: "v3.2" as const,
+			rollupCreatorVersion: input.version,
 		};
 		if (!(await createRollupEnoughCustomFeeTokenAllowance(allowanceParams))) {
 			console.log("Approving custom fee token allowance for RollupCreator...");
@@ -250,7 +266,7 @@ async function createRollupWithCreatorOverride(input: {
 		account: input.account.address,
 		publicClient: input.parentChainPublicClient,
 		rollupCreatorAddressOverride: input.rollupCreatorAddress,
-		rollupCreatorVersion: "v3.2",
+		rollupCreatorVersion: input.version,
 		value,
 	});
 

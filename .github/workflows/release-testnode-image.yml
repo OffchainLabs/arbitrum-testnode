@@ -97,7 +97,7 @@ jobs:
           INPUT_CONTRACTS_VERSION: ${{ steps.resolve.outputs.nitro-contracts-version }}
         run: >-
           node --input-type=module -e
-          "import { NITRO_CONTRACTS_VERSIONS, VARIANTS } from './packages/testnode/src/runtime.mjs';
+          "import { NITRO_CONTRACTS_VERSIONS, VARIANTS, hasVariantSnapshot, resolveVariantSnapshot } from './packages/testnode/src/runtime.mjs';
           const names =
           process.env.INPUT_VARIANT === 'all'
           ? Object.keys(VARIANTS)
@@ -111,11 +111,16 @@ jobs:
             const config = VARIANTS[variant];
             if (!config) throw new Error(\`Unknown variant \${variant}\`);
             for (const contractsVersion of contractsVersions) {
+              if (!hasVariantSnapshot(variant, contractsVersion)) {
+                console.error(\`Skipping \${variant} x \${contractsVersion}: no snapshot bundle\`);
+                continue;
+              }
+              const snapshot = resolveVariantSnapshot(variant, contractsVersion);
               include.push({
                 variant,
                 contractsVersion,
-                snapshotId: config.snapshotId,
-                snapshotReleaseTag: config.snapshotReleaseTag
+                snapshotId: snapshot.snapshotId,
+                snapshotReleaseTag: snapshot.snapshotReleaseTag
               });
             }
           }

@@ -17,3 +17,11 @@ export function findProjectRoot(startDir = import.meta.dirname): string {
 		current = parent;
 	}
 }
+
+let cached: string | undefined;
+export function projectRoot(): string {
+	if (cached === undefined) {
+		cached = findProjectRoot();
+	}
+	return cached;
+}
