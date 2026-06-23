@@ -13,6 +13,7 @@ import {
 import { basename, dirname, join, resolve } from "node:path";
 import type { Address } from "viem";
 import { execOrThrow } from "./exec.js";
+import { ZERO_ADDRESS } from "./init-helpers.js";
 import { gatewayRouterAbi, publicClient } from "./rpc.js";
 
 export const SNAPSHOT_VERSION = 1;
@@ -365,6 +366,85 @@ async function readAddress(contract: Address, arg: Address, rpcUrl: string): Pro
 	return result as string;
 }
 
+interface SemanticNetwork {
+	nativeToken?: string;
+	tokenBridge: {
+		parentGatewayRouter: string;
+		parentWeth: string;
+		parentWethGateway: string;
+		childGatewayRouter: string;
+		childWethGateway: string;
+	};
+}
+
+interface WethGatewayCheck {
+	label: string;
+	contract: string;
+	expected: string;
+	token: string;
+	rpcUrl: string;
+}
+
+/**
+ * Build the WETH-gateway router checks, gating each chain's checks on whether it
+ * uses a custom fee token. The deploy path only registers a WETH gateway for
+ * non-custom-fee chains (see `ensureWethGatewayRegistered` in token-bridge.ts,
+ * guarded by `nativeTokenAddress === ZERO_ADDRESS`), so custom-fee chains
+ * legitimately have no WETH gateway to verify. A network is custom-fee when its
+ * `nativeToken` is set to a non-zero address (mirrors `isCustomGas` in
+ * init/chain-steps.ts). An absent `nativeToken` means ETH.
+ */
+export function buildWethGatewayChecks(
+	l2Network: SemanticNetwork,
+	l3Network: SemanticNetwork,
+	rpcUrls: { l1: string; l2: string; l3: string },
+): WethGatewayCheck[] {
+	const isCustomFee = (network: SemanticNetwork): boolean =>
+		!!network.nativeToken && network.nativeToken !== ZERO_ADDRESS;
+
+	const checks: WethGatewayCheck[] = [];
+
+	if (!isCustomFee(l2Network)) {
+		checks.push(
+			{
+				label: "L1->L2 parent WETH gateway",
+				contract: l2Network.tokenBridge.parentGatewayRouter,
+				expected: l2Network.tokenBridge.parentWethGateway,
+				token: l2Network.tokenBridge.parentWeth,
+				rpcUrl: rpcUrls.l1,
+			},
+			{
+				label: "L1->L2 child WETH gateway",
+				contract: l2Network.tokenBridge.childGatewayRouter,
+				expected: l2Network.tokenBridge.childWethGateway,
+				token: l2Network.tokenBridge.parentWeth,
+				rpcUrl: rpcUrls.l2,
+			},
+		);
+	}
+
+	if (!isCustomFee(l3Network)) {
+		checks.push(
+			{
+				label: "L2->L3 parent WETH gateway",
+				contract: l3Network.tokenBridge.parentGatewayRouter,
+				expected: l3Network.tokenBridge.parentWethGateway,
+				token: l3Network.tokenBridge.parentWeth,
+				rpcUrl: rpcUrls.l2,
+			},
+			{
+				label: "L2->L3 child WETH gateway",
+				contract: l3Network.tokenBridge.childGatewayRouter,
+				expected: l3Network.tokenBridge.childWethGateway,
+				token: l3Network.tokenBridge.parentWeth,
+				rpcUrl: rpcUrls.l3,
+			},
+		);
+	}
+
+	return checks;
+}
+
 export async function verifySnapshotSemanticState(
 	configDir: string,
 	rpcUrls: {
@@ -374,24 +454,8 @@ export async function verifySnapshotSemanticState(
 	},
 ): Promise<void> {
 	const localNetworks = JSON.parse(readFileSync(join(configDir, "localNetwork.json"), "utf-8")) as {
-		l2Network?: {
-			tokenBridge: {
-				parentGatewayRouter: string;
-				parentWeth: string;
-				parentWethGateway: string;
-				childGatewayRouter: string;
-				childWethGateway: string;
-			};
-		};
-		l3Network?: {
-			tokenBridge: {
-				parentGatewayRouter: string;
-				parentWeth: string;
-				parentWethGateway: string;
-				childGatewayRouter: string;
-				childWethGateway: string;
-			};
-		};
+		l2Network?: SemanticNetwork;
+		l3Network?: SemanticNetwork;
 	};
 
 	const l2Network = localNetworks.l2Network;
@@ -400,36 +464,7 @@ export async function verifySnapshotSemanticState(
 		throw new Error("Snapshot semantic verification requires l2Network and l3Network");
 	}
 
-	const checks = [
-		{
-			label: "L1->L2 parent WETH gateway",
-			contract: l2Network.tokenBridge.parentGatewayRouter,
-			expected: l2Network.tokenBridge.parentWethGateway,
-			token: l2Network.tokenBridge.parentWeth,
-			rpcUrl: rpcUrls.l1,
-		},
-		{
-			label: "L1->L2 child WETH gateway",
-			contract: l2Network.tokenBridge.childGatewayRouter,
-			expected: l2Network.tokenBridge.childWethGateway,
-			token: l2Network.tokenBridge.parentWeth,
-			rpcUrl: rpcUrls.l2,
-		},
-		{
-			label: "L2->L3 parent WETH gateway",
-			contract: l3Network.tokenBridge.parentGatewayRouter,
-			expected: l3Network.tokenBridge.parentWethGateway,
-			token: l3Network.tokenBridge.parentWeth,
-			rpcUrl: rpcUrls.l2,
-		},
-		{
-			label: "L2->L3 child WETH gateway",
-			contract: l3Network.tokenBridge.childGatewayRouter,
-			expected: l3Network.tokenBridge.childWethGateway,
-			token: l3Network.tokenBridge.parentWeth,
-			rpcUrl: rpcUrls.l3,
-		},
-	] as const;
+	const checks = buildWethGatewayChecks(l2Network, l3Network, rpcUrls);
 
 	for (const check of checks) {
 		const actual = await readAddress(
