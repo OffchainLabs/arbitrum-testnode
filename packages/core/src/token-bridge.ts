@@ -107,6 +107,7 @@ interface TokenBridgeContracts {
 		weth: Address;
 		multicall: Address;
 		proxyAdmin: Address;
+		upgradeExecutor: Address;
 	};
 }
 
@@ -291,7 +292,7 @@ async function deployChildChainFromSpec(
 		parentChainId: number;
 		outputDirName: "l2" | "l3";
 	},
-): Promise<void> {
+): Promise<TokenBridgeContracts> {
 	mkdirSync(getAdminOutputDir(params.configDir, params.outputDirName), { recursive: true });
 
 	const nativeTokenAddress = params.deployment["native-token"] as Address | undefined;
@@ -367,6 +368,7 @@ async function deployChildChainFromSpec(
 		outbox: params.outbox,
 		tokenBridgeContracts,
 	});
+	return tokenBridgeContracts;
 }
 
 async function deployChildChainWithRecovery(input: {
@@ -556,6 +558,27 @@ async function setL3ChainOwners(l3RpcUrl: string, upgradeExecutorAddress: Addres
 	});
 }
 
+function recordChainOwnerUpgradeExecutor(configDir: string, address: Address): void {
+	for (const fileName of ["l3_deployment.json", "l3deployment.json"]) {
+		const filePath = join(configDir, fileName);
+		if (!existsSync(filePath)) {
+			continue;
+		}
+		const deployment = JSON.parse(readFileSync(filePath, "utf-8")) as Record<string, unknown>;
+		deployment["chain-owner-upgrade-executor"] = address;
+		writeFileSync(filePath, `${JSON.stringify(deployment, null, 2)}\n`);
+	}
+}
+
+export async function transferL3OwnershipToOrbitUpgradeExecutor(
+	configDir: string,
+	l3RpcUrl: string,
+	orbitUpgradeExecutor: Address,
+): Promise<void> {
+	await setL3ChainOwners(l3RpcUrl, orbitUpgradeExecutor);
+	recordChainOwnerUpgradeExecutor(configDir, orbitUpgradeExecutor);
+}
+
 export async function ensureL2L3TokenBridgeFunding(
 	l2RpcUrl: string,
 	l3RpcUrl: string,
@@ -628,7 +651,7 @@ export async function deployL1L2TokenBridge(params: BridgeDeployParams): Promise
 	publishLocalNetworkArtifacts(params.configDir);
 }
 
-export async function deployL2L3TokenBridge(params: BridgeDeployParams): Promise<void> {
+export async function deployL2L3TokenBridge(params: BridgeDeployParams): Promise<Address> {
 	const specPath = getChainSpecPath(params.configDir, "l3");
 	const parentRpc = toHostAccessibleRpcUrl(params.parentRpc);
 	const childRpc = toHostAccessibleRpcUrl(params.childRpc);
@@ -662,7 +685,7 @@ export async function deployL2L3TokenBridge(params: BridgeDeployParams): Promise
 		owner: accounts.l3owner.address,
 	});
 	writeChainSpecFile(specPath, spec);
-	await deployChildChainFromSpec({
+	const tokenBridgeContracts = await deployChildChainFromSpec({
 		...params,
 		parentRpc,
 		childRpc,
@@ -682,6 +705,7 @@ export async function deployL2L3TokenBridge(params: BridgeDeployParams): Promise
 	);
 	writeCombinedLocalNetworkFile(params.configDir);
 	publishLocalNetworkArtifacts(params.configDir);
+	return tokenBridgeContracts.orbitChainContracts.upgradeExecutor;
 }
 
 export async function transferL3ChainOwnership(

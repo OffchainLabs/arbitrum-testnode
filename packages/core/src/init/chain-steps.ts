@@ -21,6 +21,7 @@ import {
 	deployL2L3TokenBridge,
 	ensureL2L3TokenBridgeFunding,
 	getL2ChildWeth,
+	transferL3OwnershipToOrbitUpgradeExecutor,
 } from "../token-bridge.js";
 import { ensureValidatorWalletStaked } from "../validator-wallet.js";
 import type { InitRuntime } from "./context.js";
@@ -781,7 +782,7 @@ function createL3Steps(
 				throw new Error("Missing l3 rollup deployment data");
 			}
 			await ensureL2L3TokenBridgeFunding(L2_RPC, L3_RPC);
-			await deployL2L3TokenBridge({
+			const orbitUpgradeExecutor = await deployL2L3TokenBridge({
 				compose: runtime.dockerOpts,
 				configDir: runtime.configDir,
 				rollupAddress: rollupData["rollup"] as string,
@@ -800,6 +801,11 @@ function createL3Steps(
 			execOrThrow("sleep", ["5"], { timeout: 6_000 });
 			composeRestart(["l3node"], runtime.dockerOpts);
 			await waitForL3RpcWithParentChainNudges(120_000);
+			await transferL3OwnershipToOrbitUpgradeExecutor(
+				runtime.configDir,
+				L3_RPC,
+				orbitUpgradeExecutor,
+			);
 			return markStepDone(state, "deploy-l3-token-bridge");
 		},
 	};
