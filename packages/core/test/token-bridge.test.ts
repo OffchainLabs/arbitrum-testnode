@@ -10,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as execModule from "../src/exec.js";
 import {
+	assertTokenBridgeDepsPresent,
 	deployL2L3TokenBridge,
 	getL2ChildWeth,
 	parseTokenBridgeCreatorAddress,
@@ -145,6 +146,33 @@ describe("getL2ChildWeth", () => {
 		expect(() => getL2ChildWeth(tmpDir)).toThrow(
 			"Missing l2Network.tokenBridge.childWeth in l1l2_network.json",
 		);
+	});
+});
+
+describe("assertTokenBridgeDepsPresent", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "token-bridge-deps-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("throws an actionable error when token-bridge-contracts deps are missing", () => {
+		expect(() => assertTokenBridgeDepsPresent(tmpDir)).toThrow(tmpDir);
+		expect(() => assertTokenBridgeDepsPresent(tmpDir)).toThrow("yarn install");
+		expect(() => assertTokenBridgeDepsPresent(tmpDir)).toThrow("TOKEN_BRIDGE_LOCAL_DIR");
+	});
+
+	it("does not throw when the ts-node binary and deploy script are present", () => {
+		fs.mkdirSync(path.join(tmpDir, "node_modules/ts-node/dist"), { recursive: true });
+		fs.writeFileSync(path.join(tmpDir, "node_modules/ts-node/dist/bin.js"), "");
+		fs.mkdirSync(path.join(tmpDir, "scripts/deployment"), { recursive: true });
+		fs.writeFileSync(path.join(tmpDir, "scripts/deployment/deployTokenBridgeCreator.ts"), "");
+
+		expect(() => assertTokenBridgeDepsPresent(tmpDir)).not.toThrow();
 	});
 });
 

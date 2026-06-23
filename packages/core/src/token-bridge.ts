@@ -218,12 +218,38 @@ async function readAddressOrZero(
 	return readContractOrZero(contractAddress, rollupAbi, functionName, rpcUrl);
 }
 
+/**
+ * Verify the token-bridge-contracts workspace has the dependencies the creator
+ * deploy spawn requires (the ts-node binary and the deploy script). A fresh
+ * sibling checkout has no node_modules, which would otherwise surface as a
+ * cryptic ENOENT from the child process. Throws an actionable error instead.
+ */
+export function assertTokenBridgeDepsPresent(dir: string): void {
+	const tsNodeBin = resolve(dir, "node_modules/ts-node/dist/bin.js");
+	const deployScript = resolve(dir, TOKEN_BRIDGE_CREATOR_SCRIPT);
+	const missing: string[] = [];
+	if (!existsSync(tsNodeBin)) {
+		missing.push(tsNodeBin);
+	}
+	if (!existsSync(deployScript)) {
+		missing.push(deployScript);
+	}
+	if (missing.length > 0) {
+		throw new Error(
+			`token-bridge-contracts dependencies are missing in ${dir} (expected ${missing.join(
+				", ",
+			)}). Run \`yarn install\` inside token-bridge-contracts, or set TOKEN_BRIDGE_LOCAL_DIR to a checkout with installed dependencies.`,
+		);
+	}
+}
+
 function deployTokenBridgeCreator(params: {
 	compose: ComposeContext;
 	parentRpc: string;
 	parentKey: string;
 	parentWeth?: string | undefined;
 }): string {
+	assertTokenBridgeDepsPresent(LOCAL_TOKEN_BRIDGE_DIR);
 	const requiresParentDeployGasOverride =
 		params.parentRpc !== "http://host.docker.internal:8545" &&
 		params.parentRpc !== "http://127.0.0.1:8545";
