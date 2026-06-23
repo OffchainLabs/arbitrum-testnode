@@ -60,27 +60,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Read code defaults
-        id: defaults
-        run: >-
-          node --input-type=module -e
-          "import { DEFAULT_NITRO_CONTRACTS_VERSION } from './packages/testnode/src/runtime.mjs';
-          const { appendFileSync } = await import('node:fs');
-          appendFileSync(process.env.GITHUB_OUTPUT, 'nitro-contracts-version=' + DEFAULT_NITRO_CONTRACTS_VERSION + '\\n');"
-
       - name: Resolve testnode inputs
         id: resolve
         env:
-          # On a tag push, publish every variant. Each variant installs its own
+          # On a tag push, publish every variant in every nitro-contracts version
+          # so we can test against either. Each variant installs its own
           # pre-generated snapshot bundle (per-variant snapshotReleaseTag in
           # runtime.mjs), so snapshot-version here is unused for publishing and
-          # passed only to satisfy resolve-testnode.mjs. The default nitro-contracts
-          # version comes from code (steps.defaults), not a YAML literal.
+          # passed only to satisfy resolve-testnode.mjs. The matrix builder skips
+          # variant x version combos that have no snapshot bundle.
           TESTNODE_NAME: ${{ github.event_name == 'push' && '' || inputs.name }}
           TESTNODE_VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
           TESTNODE_SNAPSHOT_VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.snapshot-version }}
           TESTNODE_VARIANT: ${{ github.event_name == 'push' && 'all' || inputs.variant }}
-          TESTNODE_NITRO_CONTRACTS_VERSION: ${{ github.event_name == 'push' && steps.defaults.outputs.nitro-contracts-version || inputs.nitro-contracts-version }}
+          TESTNODE_NITRO_CONTRACTS_VERSION: ${{ github.event_name == 'push' && 'all' || inputs.nitro-contracts-version }}
         run: >-
           node scripts/ci/resolve-testnode.mjs
           --name "$TESTNODE_NAME"
