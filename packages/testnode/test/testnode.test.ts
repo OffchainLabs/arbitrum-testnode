@@ -1,5 +1,63 @@
 import { describe, expect, it } from "vitest";
-import { buildStartTestnodeState, testnodeDockerRunArgs } from "../src/index.js";
+import {
+	buildStartTestnodeState,
+	hasVariantSnapshot,
+	resolveVariantSnapshot,
+	testnodeDockerRunArgs,
+} from "../src/index.js";
+
+describe("hasVariantSnapshot", () => {
+	it("is true for every variant at the default contracts version (v3.2)", () => {
+		expect(hasVariantSnapshot("l2", "v3.2")).toBe(true);
+		expect(hasVariantSnapshot("l3-eth", "v3.2")).toBe(true);
+		expect(hasVariantSnapshot("l3-custom-16", "v3.2")).toBe(true);
+		expect(hasVariantSnapshot("l3-custom-18", "v3.2")).toBe(true);
+	});
+
+	it("is true only for variants with a declared bundle at v2.1", () => {
+		expect(hasVariantSnapshot("l3-custom-18", "v2.1")).toBe(true);
+		expect(hasVariantSnapshot("l3-custom-6", "v2.1")).toBe(true);
+	});
+
+	it("is false for variants with no bundle at a non-default version", () => {
+		expect(hasVariantSnapshot("l2", "v2.1")).toBe(false);
+		expect(hasVariantSnapshot("l3-eth", "v2.1")).toBe(false);
+		expect(hasVariantSnapshot("l3-custom-16", "v2.1")).toBe(false);
+		expect(hasVariantSnapshot("l3-custom-20", "v2.1")).toBe(false);
+	});
+
+	it("is false for an unknown variant", () => {
+		expect(hasVariantSnapshot("nope", "v3.2")).toBe(false);
+	});
+});
+
+describe("resolveVariantSnapshot", () => {
+	it("returns the base bundle for the default contracts version (v3.2)", () => {
+		expect(resolveVariantSnapshot("l3-custom-18", "v3.2")).toEqual({
+			snapshotId: "l3-custom-18",
+			snapshotReleaseTag: "l3-custom-18",
+		});
+		expect(resolveVariantSnapshot("l2", "v3.2")).toEqual({
+			snapshotId: "l2",
+			snapshotReleaseTag: "v0.1.6",
+		});
+	});
+
+	it("returns the per-version bundle for v2.1 custom-gas variants", () => {
+		expect(resolveVariantSnapshot("l3-custom-18", "v2.1")).toEqual({
+			snapshotId: "l3-custom-18-v2.1",
+			snapshotReleaseTag: "l3-custom-18-v2.1",
+		});
+		expect(resolveVariantSnapshot("l3-custom-6", "v2.1")).toEqual({
+			snapshotId: "l3-custom-6-v2.1",
+			snapshotReleaseTag: "l3-custom-6-v2.1",
+		});
+	});
+
+	it("throws on an unknown variant", () => {
+		expect(() => resolveVariantSnapshot("nope", "v3.2")).toThrow(/Unknown variant/);
+	});
+});
 
 describe("buildStartTestnodeState", () => {
 	it("defaults to the local L3 variant and cwd-scoped output dir", () => {

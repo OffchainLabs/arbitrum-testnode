@@ -7,6 +7,13 @@ export interface VariantDefinition {
 	l3Enabled: boolean;
 	snapshotId: string;
 	snapshotReleaseTag: string;
+	/**
+	 * Per-contracts-version snapshot bundles. When a variant ships distinct
+	 * snapshots per nitro-contracts version (e.g. v2.1 vs v3.2), the override for
+	 * that version is keyed here; the default version falls back to the top-level
+	 * `snapshotId`/`snapshotReleaseTag`.
+	 */
+	snapshotsByContractsVersion?: Record<string, { snapshotId: string; snapshotReleaseTag: string }>;
 	timeboostEnabled?: boolean;
 }
 

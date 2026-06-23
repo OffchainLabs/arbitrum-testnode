@@ -10,7 +10,12 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
-import { VARIANTS } from "../../packages/testnode/src/runtime.mjs";
+import {
+	DEFAULT_NITRO_CONTRACTS_VERSION,
+	VARIANTS,
+	hasVariantSnapshot,
+	resolveVariantSnapshot,
+} from "../../packages/testnode/src/runtime.mjs";
 
 function readArg(name) {
 	const index = process.argv.indexOf(name);
@@ -61,7 +66,16 @@ if (!definition) {
 
 const contractsVersion = readArg("--nitro-contracts-version") || "";
 const testnodeName = readArg("--testnode-name") || "";
-const snapshotId = readArg("--snapshot-id") || definition.snapshotId;
+let snapshotId = readArg("--snapshot-id");
+if (!snapshotId) {
+	const resolveVersion = contractsVersion || DEFAULT_NITRO_CONTRACTS_VERSION;
+	if (!hasVariantSnapshot(variant, resolveVersion)) {
+		throw new Error(
+			`No snapshot bundle for variant ${variant} at contracts version ${resolveVersion}; pass --snapshot-id`,
+		);
+	}
+	snapshotId = resolveVariantSnapshot(variant, resolveVersion).snapshotId;
+}
 const snapshotDir = resolve(readArg("--snapshot-dir") || join("config", "snapshots", snapshotId));
 const outputDir = resolve(readArg("--output-dir") || ".testnode-context");
 

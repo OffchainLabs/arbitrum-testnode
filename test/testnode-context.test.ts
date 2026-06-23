@@ -18,8 +18,8 @@ function writeTarFixture(sourceDir: string, archivePath: string, marker: string)
 	execFileSync("tar", ["-cf", archivePath, "-C", sourceDir, "."]);
 }
 
-function createSnapshotFixture(rootDir: string): string {
-	const snapshotDir = join(rootDir, "snapshots", "default");
+function createSnapshotFixture(rootDir: string, snapshotId = "default"): string {
+	const snapshotDir = join(rootDir, "snapshots", snapshotId);
 	const configDir = join(snapshotDir, "config");
 	const volumeDir = join(snapshotDir, "volumes");
 
@@ -109,6 +109,32 @@ describe("prepare-testnode-context", () => {
 			testnodeName: "",
 			variant: "l3-eth",
 		});
+	});
+
+	it("resolves a version-specific snapshot id from the variant + contracts version", () => {
+		const rootDir = createTempDir();
+		const snapshotDir = createSnapshotFixture(rootDir, "l3-custom-18-v2.1");
+		const outputDir = join(rootDir, "context");
+
+		execFileSync(
+			"node",
+			[
+				resolve("scripts/ci/prepare-testnode-context.mjs"),
+				"--variant",
+				"l3-custom-18",
+				"--nitro-contracts-version",
+				"v2.1",
+				"--snapshot-dir",
+				snapshotDir,
+				"--output-dir",
+				outputDir,
+			],
+			{ cwd: resolve("."), stdio: "pipe" },
+		);
+
+		const metadata = JSON.parse(readFileSync(join(outputDir, "metadata.json"), "utf-8"));
+		expect(metadata.snapshotId).toBe("l3-custom-18-v2.1");
+		expect(metadata.nitroContractsVersion).toBe("v2.1");
 	});
 
 	it("echoes the testnode name into metadata when provided", () => {

@@ -70,6 +70,9 @@ export const VARIANTS = {
 		description: "L1 + L2 + L3 testnode with 6-decimal custom gas token on L3",
 		snapshotId: "l3-custom-6",
 		snapshotReleaseTag: "l3-custom-6",
+		snapshotsByContractsVersion: {
+			"v2.1": { snapshotId: "l3-custom-6-v2.1", snapshotReleaseTag: "l3-custom-6-v2.1" },
+		},
 		l3Enabled: true,
 		hostPorts: {
 			l1: 8545,
@@ -98,6 +101,9 @@ export const VARIANTS = {
 		description: "L1 + L2 + L3 testnode with 18-decimal custom gas token on L3",
 		snapshotId: "l3-custom-18",
 		snapshotReleaseTag: "l3-custom-18",
+		snapshotsByContractsVersion: {
+			"v2.1": { snapshotId: "l3-custom-18-v2.1", snapshotReleaseTag: "l3-custom-18-v2.1" },
+		},
 		l3Enabled: true,
 		hostPorts: {
 			l1: 8545,
@@ -199,6 +205,51 @@ export function buildTestnodeImageRef({ contractsVersion, imageRepository, varia
 	const contractsDefinition =
 		NITRO_CONTRACTS_VERSIONS[/** @type {keyof typeof NITRO_CONTRACTS_VERSIONS} */ (cv)];
 	return `${repository}:${version}-${contractsDefinition.tagComponent}-${definition.name}`;
+}
+
+/**
+ * Whether a variant ships a snapshot bundle for the given contracts version.
+ * The default contracts version always has a bundle (the existing per-variant
+ * snapshots are v3.2); non-default versions only when an explicit
+ * `snapshotsByContractsVersion` override is declared. Callers use this to skip
+ * (variant × version) combinations that have no bundle.
+ *
+ * @param {string} variant
+ * @param {string} contractsVersion
+ * @returns {boolean}
+ */
+export function hasVariantSnapshot(variant, contractsVersion) {
+	const def = VARIANTS[variant];
+	if (!def) {
+		return false;
+	}
+	if (contractsVersion === DEFAULT_NITRO_CONTRACTS_VERSION) {
+		return true;
+	}
+	return Boolean(def.snapshotsByContractsVersion?.[contractsVersion]);
+}
+
+/**
+ * Resolve the snapshot bundle (id + release tag) for a (variant, contracts
+ * version) pair. A non-default version with a `snapshotsByContractsVersion`
+ * override uses that bundle; otherwise the variant's base
+ * `snapshotId`/`snapshotReleaseTag` is returned. Pair with
+ * {@link hasVariantSnapshot} to decide whether the combination is publishable.
+ *
+ * @param {string} variant
+ * @param {string} contractsVersion
+ * @returns {{ snapshotId: string; snapshotReleaseTag: string }}
+ */
+export function resolveVariantSnapshot(variant, contractsVersion) {
+	const def = VARIANTS[variant];
+	if (!def) {
+		throw new Error(`Unknown variant ${variant}`);
+	}
+	const override = def.snapshotsByContractsVersion?.[contractsVersion];
+	if (override) {
+		return override;
+	}
+	return { snapshotId: def.snapshotId, snapshotReleaseTag: def.snapshotReleaseTag };
 }
 
 /** @param {{ runnerTemp?: string | undefined; variant: string; version: string }} options */
