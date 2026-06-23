@@ -14,6 +14,7 @@ import {
 	deployL2L3TokenBridge,
 	getL2ChildWeth,
 	parseTokenBridgeCreatorAddress,
+	transferL3OwnershipToOrbitUpgradeExecutor,
 } from "../src/token-bridge.js";
 
 const mocks = vi.hoisted(() => ({
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
 	createTokenBridgePrepareSetWethGatewayTransactionRequest: vi.fn(),
 	createTokenBridgePrepareSetWethGatewayTransactionReceipt: vi.fn(),
 	waitForWethGatewayRetryables: vi.fn(),
+	writeContract: vi.fn().mockResolvedValue("0x"),
 	tokenBridgeContracts: {
 		parentChainContracts: {
 			router: "0xa111111111111111111111111111111111111111",
@@ -106,7 +108,7 @@ vi.mock("../src/rpc.js", () => ({
 	})),
 	walletClient: vi.fn().mockReturnValue({
 		sendTransaction: vi.fn().mockResolvedValue("0x"),
-		writeContract: vi.fn().mockResolvedValue("0x"),
+		writeContract: mocks.writeContract,
 	}),
 	arbOwnerAbi: [],
 	rollupAbi: [],
@@ -269,7 +271,7 @@ describe("deployL2L3TokenBridge", () => {
 			return "";
 		});
 
-		await deployL2L3TokenBridge({
+		const orbitUpgradeExecutor = await deployL2L3TokenBridge({
 			compose: {
 				composeFile: "/tmp/docker-compose.yaml",
 				projectName: "arbitrum-testnode",
@@ -283,6 +285,8 @@ describe("deployL2L3TokenBridge", () => {
 			childKey: "0x3333333333333333333333333333333333333333333333333333333333333333",
 			parentWethOverride: "0x5555555555555555555555555555555555555555",
 		});
+
+		expect(orbitUpgradeExecutor).toBe("0xb999999999999999999999999999999999999999");
 
 		expect(execOrThrow).toHaveBeenCalledWith(
 			"env",
@@ -539,5 +543,68 @@ describe("deployL2L3TokenBridge", () => {
 		expect(l2l3Network.l3Network.tokenBridge.childGatewayRouter).toBe(
 			"0xb111111111111111111111111111111111111111",
 		);
+	});
+});
+
+describe("transferL3OwnershipToOrbitUpgradeExecutor", () => {
+	let tmpDir: string;
+	const orbitUpgradeExecutor = "0xb999999999999999999999999999999999999999";
+	const l3OwnerAddress = "0x863c904166E801527125D8672442D736194A3362";
+
+	beforeEach(() => {
+		tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "token-bridge-test-"));
+		vi.clearAllMocks();
+		mocks.writeContract.mockResolvedValue("0x");
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("adds the orbit upgrade executor as chain owner then removes the l3owner EOA", async () => {
+		await transferL3OwnershipToOrbitUpgradeExecutor(
+			tmpDir,
+			"http://127.0.0.1:8549",
+			orbitUpgradeExecutor,
+		);
+
+		expect(mocks.writeContract).toHaveBeenCalledTimes(2);
+		expect(mocks.writeContract).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({
+				functionName: "addChainOwner",
+				args: [orbitUpgradeExecutor],
+			}),
+		);
+		expect(mocks.writeContract).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				functionName: "removeChainOwner",
+				args: [l3OwnerAddress],
+			}),
+		);
+	});
+
+	it("records chain-owner-upgrade-executor in both deployment files without touching upgrade-executor", async () => {
+		for (const fileName of ["l3_deployment.json", "l3deployment.json"]) {
+			fs.writeFileSync(
+				path.join(tmpDir, fileName),
+				`${JSON.stringify({ "upgrade-executor": "0x5555555555555555555555555555555555555555" }, null, 2)}\n`,
+			);
+		}
+
+		await transferL3OwnershipToOrbitUpgradeExecutor(
+			tmpDir,
+			"http://127.0.0.1:8549",
+			orbitUpgradeExecutor,
+		);
+
+		for (const fileName of ["l3_deployment.json", "l3deployment.json"]) {
+			const deployment = JSON.parse(
+				fs.readFileSync(path.join(tmpDir, fileName), "utf-8"),
+			) as Record<string, string>;
+			expect(deployment["chain-owner-upgrade-executor"]).toBe(orbitUpgradeExecutor);
+			expect(deployment["upgrade-executor"]).toBe("0x5555555555555555555555555555555555555555");
+		}
 	});
 });
