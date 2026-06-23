@@ -6,12 +6,28 @@ import {
 	ANVIL_STATE_DIRNAME,
 	DEFAULT_SNAPSHOT_ID,
 	buildSnapshotManifest,
+	buildWethGatewayChecks,
 	getSnapshotConfigDir,
 	getSnapshotManifestPath,
 	getSnapshotVolumesDir,
 	invalidateSnapshot,
 	verifySnapshotManifest,
 } from "../src/snapshot.js";
+
+const ZERO = "0x0000000000000000000000000000000000000000";
+
+function makeNetwork(nativeToken?: string) {
+	return {
+		...(nativeToken !== undefined ? { nativeToken } : {}),
+		tokenBridge: {
+			parentGatewayRouter: "0xa111111111111111111111111111111111111111",
+			parentWeth: "0xa555555555555555555555555555555555555555",
+			parentWethGateway: "0xa444444444444444444444444444444444444444",
+			childGatewayRouter: "0xb111111111111111111111111111111111111111",
+			childWethGateway: "0xb444444444444444444444444444444444444444",
+		},
+	};
+}
 
 const CRITICAL_CONFIG_FILES = [
 	"state.json",
@@ -126,6 +142,54 @@ describe("snapshot manifest", () => {
 		expect(() => verifySnapshotManifest(configDir)).toThrow(
 			"Checksum mismatch for snapshot file localNetwork.json",
 		);
+	});
+
+	it("includes WETH gateway checks for ETH (non-custom-fee) chains", () => {
+		const checks = buildWethGatewayChecks(makeNetwork(ZERO), makeNetwork(ZERO), {
+			l1: "l1",
+			l2: "l2",
+			l3: "l3",
+		});
+		const labels = checks.map((c) => c.label);
+		expect(labels).toContain("L1->L2 parent WETH gateway");
+		expect(labels).toContain("L1->L2 child WETH gateway");
+		expect(labels).toContain("L2->L3 parent WETH gateway");
+		expect(labels).toContain("L2->L3 child WETH gateway");
+	});
+
+	it("treats an absent nativeToken as ETH and includes WETH gateway checks", () => {
+		const checks = buildWethGatewayChecks(makeNetwork(), makeNetwork(), {
+			l1: "l1",
+			l2: "l2",
+			l3: "l3",
+		});
+		expect(checks).toHaveLength(4);
+	});
+
+	it("excludes L2->L3 WETH gateway checks for a custom-fee L3 chain", () => {
+		const checks = buildWethGatewayChecks(
+			makeNetwork(ZERO),
+			makeNetwork("0x1234567890123456789012345678901234567890"),
+			{ l1: "l1", l2: "l2", l3: "l3" },
+		);
+		const labels = checks.map((c) => c.label);
+		expect(labels).toContain("L1->L2 parent WETH gateway");
+		expect(labels).toContain("L1->L2 child WETH gateway");
+		expect(labels).not.toContain("L2->L3 parent WETH gateway");
+		expect(labels).not.toContain("L2->L3 child WETH gateway");
+	});
+
+	it("excludes L1->L2 WETH gateway checks for a custom-fee L2 chain", () => {
+		const checks = buildWethGatewayChecks(
+			makeNetwork("0x1234567890123456789012345678901234567890"),
+			makeNetwork(ZERO),
+			{ l1: "l1", l2: "l2", l3: "l3" },
+		);
+		const labels = checks.map((c) => c.label);
+		expect(labels).not.toContain("L1->L2 parent WETH gateway");
+		expect(labels).not.toContain("L1->L2 child WETH gateway");
+		expect(labels).toContain("L2->L3 parent WETH gateway");
+		expect(labels).toContain("L2->L3 child WETH gateway");
 	});
 
 	it("invalidates a snapshot directory", () => {
