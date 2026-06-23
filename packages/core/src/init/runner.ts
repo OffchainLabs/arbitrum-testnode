@@ -32,6 +32,7 @@ async function runInitLoop(
 	feeTokenDecimals?: number,
 	rebuild?: boolean,
 	timeboostEnabled?: boolean,
+	nitroContractsVersion?: string,
 ): Promise<{
 	success: boolean;
 	failedStep?: string;
@@ -40,7 +41,7 @@ async function runInitLoop(
 	steps: string[];
 }> {
 	let state = rebuild ? createState() : (loadState(runtime.configDir) ?? createState());
-	const runners = makeStepRunners(runtime, feeTokenDecimals);
+	const runners = makeStepRunners(runtime, feeTokenDecimals, nitroContractsVersion);
 	const steps = getInitSteps({ timeboostEnabled });
 	const timings: Record<string, number> = {};
 
@@ -88,6 +89,7 @@ export interface InitCommandOptions {
 	captureId?: string | undefined;
 	feeTokenDecimals?: number | undefined;
 	foreground?: boolean | undefined;
+	nitroContractsVersion?: string | undefined;
 	rebuild?: boolean | undefined;
 	skipPostCaptureVerify?: boolean | undefined;
 	snapshotVersion?: string | undefined;
@@ -122,6 +124,7 @@ export async function runInitCommand(options: InitCommandOptions, context: InitC
 			snapshotVersion: options.snapshotVersion,
 			feeTokenDecimals,
 			timeboostEnabled: options.timeboostEnabled,
+			nitroContractsVersion: options.nitroContractsVersion,
 		});
 	}
 
@@ -138,6 +141,7 @@ async function runInitForeground(
 	runtime: InitRuntime,
 	options: {
 		foreground?: boolean | undefined;
+		nitroContractsVersion?: string | undefined;
 		rebuild?: boolean | undefined;
 		skipPostCaptureVerify?: boolean | undefined;
 		snapshotVersion?: string | undefined;
@@ -177,6 +181,7 @@ async function runInitForeground(
 		feeTokenDecimals,
 		options.rebuild,
 		options.timeboostEnabled,
+		options.nitroContractsVersion,
 	);
 	const totalElapsed = Date.now() - totalStart;
 	logInitTimeline(result.timings, totalElapsed);
@@ -233,6 +238,7 @@ function startBackgroundInit(
 		snapshotVersion: string | undefined;
 		feeTokenDecimals: number | undefined;
 		timeboostEnabled: boolean | undefined;
+		nitroContractsVersion: string | undefined;
 	},
 ) {
 	const extraArgs = [
@@ -241,6 +247,9 @@ function startBackgroundInit(
 			? ["--fee-token-decimals", String(params.feeTokenDecimals)]
 			: []),
 		...(params.timeboostEnabled ? ["--timeboost-enabled"] : []),
+		...(params.nitroContractsVersion
+			? ["--nitro-contracts-version", params.nitroContractsVersion]
+			: []),
 	];
 	const run = startDetachedInitRun(runtime.configDir, runtime.projectRoot, extraArgs);
 	return {
