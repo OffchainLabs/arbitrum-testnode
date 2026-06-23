@@ -7,12 +7,7 @@ import {
 } from "@arbitrum/testnode-core/run-logger.js";
 import { loadState } from "@arbitrum/testnode-core/state.js";
 import { Cli } from "incur";
-import { findProjectRoot } from "../project-root.js";
-
-const PROJECT_ROOT = findProjectRoot();
-const CONFIG_DIR = resolve(PROJECT_ROOT, "config");
-const COMPOSE_FILE = resolve(PROJECT_ROOT, "docker/docker-compose.yaml");
-const DOCKER_OPTS = { composeFile: COMPOSE_FILE, projectName: "arbitrum-testnode" };
+import { projectRoot } from "../project-root.js";
 
 const RPCS = {
 	l1: "http://127.0.0.1:8545",
@@ -23,6 +18,9 @@ const RPCS = {
 export const statusCli = Cli.create("status", {
 	description: "Show testnode status",
 	run() {
+		const CONFIG_DIR = resolve(projectRoot(), "config");
+		const COMPOSE_FILE = resolve(projectRoot(), "docker/docker-compose.yaml");
+		const DOCKER_OPTS = { composeFile: COMPOSE_FILE, projectName: "arbitrum-testnode" };
 		const state = loadState(CONFIG_DIR);
 		const run = loadCurrentRun(CONFIG_DIR);
 

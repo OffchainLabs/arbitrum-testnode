@@ -1,8 +1,6 @@
 import { createInitContext, runInitCommand } from "@arbitrum/testnode-core/init-runner.js";
 import { Cli, z } from "incur";
-import { findProjectRoot } from "../project-root.js";
-
-const PROJECT_ROOT = findProjectRoot();
+import { projectRoot } from "../project-root.js";
 
 export const initCli = Cli.create("init", {
 	description: "Initialize the testnode (L1 + L2 + L3 with bridges)",
@@ -38,6 +36,6 @@ export const initCli = Cli.create("init", {
 			.describe("Deploy Timeboost contracts and restart L2 with Timeboost enabled"),
 	}),
 	async run(c) {
-		return runInitCommand(c.options, createInitContext(PROJECT_ROOT));
+		return runInitCommand(c.options, createInitContext(projectRoot()));
 	},
 });

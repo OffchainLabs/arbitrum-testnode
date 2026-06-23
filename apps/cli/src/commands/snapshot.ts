@@ -19,12 +19,11 @@ import {
 	verifySnapshotSemanticState,
 } from "@arbitrum/testnode-core/snapshot.js";
 import { Cli, z } from "incur";
-import { findProjectRoot } from "../project-root.js";
+import { projectRoot } from "../project-root.js";
 
-const PROJECT_ROOT = findProjectRoot();
-const CONFIG_DIR = resolve(PROJECT_ROOT, "config");
-const COMPOSE_FILE = resolve(PROJECT_ROOT, "docker/docker-compose.yaml");
-const SNAPSHOT_PACK_DIR = resolve(PROJECT_ROOT, "dist/snapshots");
+function snapshotPackDir(): string {
+	return resolve(projectRoot(), "dist/snapshots");
+}
 
 const RPCS = {
 	l1: "http://127.0.0.1:8545",
@@ -56,7 +55,9 @@ const snapshotPackOptions = z.object({
 	outDir: z
 		.string()
 		.optional()
-		.describe(`Output directory for packaged assets (default: ${SNAPSHOT_PACK_DIR})`),
+		.describe(
+			"Output directory for packaged assets (default: dist/snapshots under the project root)",
+		),
 	tag: z.string().describe("Release tag used in the packaged asset names"),
 });
 
@@ -64,6 +65,8 @@ snapshotCli.command("build", {
 	description: "Capture the current initialized stack into a reusable snapshot",
 	options: snapshotOptions,
 	async run(c) {
+		const CONFIG_DIR = resolve(projectRoot(), "config");
+		const COMPOSE_FILE = resolve(projectRoot(), "docker/docker-compose.yaml");
 		const snapshotId = c.options.id ?? DEFAULT_SNAPSHOT_ID;
 		await verifySnapshotSemanticState(CONFIG_DIR, RPCS);
 		stopRuntime({
@@ -99,6 +102,8 @@ snapshotCli.command("restore", {
 	description: "Restore a snapshot and start the stack from it",
 	options: snapshotOptions,
 	async run(c) {
+		const CONFIG_DIR = resolve(projectRoot(), "config");
+		const COMPOSE_FILE = resolve(projectRoot(), "docker/docker-compose.yaml");
 		const snapshotId = c.options.id ?? DEFAULT_SNAPSHOT_ID;
 		stopRuntime({
 			composeFile: COMPOSE_FILE,
@@ -133,6 +138,7 @@ snapshotCli.command("verify", {
 	description: "Verify snapshot structure and, if running, semantic bridge state",
 	options: snapshotOptions,
 	async run(c) {
+		const CONFIG_DIR = resolve(projectRoot(), "config");
 		const snapshotId = c.options.id ?? DEFAULT_SNAPSHOT_ID;
 		const manifest = verifySnapshotManifest(CONFIG_DIR, snapshotId);
 		let semanticState: "skipped" | "verified" = "skipped";
@@ -158,6 +164,8 @@ snapshotCli.command("install", {
 	description: "Download and install a snapshot release",
 	options: snapshotInstallOptions,
 	async run(c) {
+		const CONFIG_DIR = resolve(projectRoot(), "config");
+		const COMPOSE_FILE = resolve(projectRoot(), "docker/docker-compose.yaml");
 		const result = await installSnapshotRelease({
 			composeFile: COMPOSE_FILE,
 			configDir: CONFIG_DIR,
@@ -183,8 +191,9 @@ snapshotCli.command("pack", {
 	description: "Package a local snapshot into GitHub release assets",
 	options: snapshotPackOptions,
 	run(c) {
+		const CONFIG_DIR = resolve(projectRoot(), "config");
 		const result = packageSnapshotRelease(CONFIG_DIR, {
-			outDir: c.options.outDir ?? SNAPSHOT_PACK_DIR,
+			outDir: c.options.outDir ?? snapshotPackDir(),
 			tag: c.options.tag,
 			...(c.options.id ? { snapshotId: c.options.id } : {}),
 		});
@@ -205,6 +214,7 @@ snapshotCli.command("invalidate", {
 	description: "Remove a snapshot bundle",
 	options: snapshotOptions,
 	run(c) {
+		const CONFIG_DIR = resolve(projectRoot(), "config");
 		const snapshotId = c.options.id ?? DEFAULT_SNAPSHOT_ID;
 		return {
 			success: true,
@@ -215,5 +225,5 @@ snapshotCli.command("invalidate", {
 });
 
 export function hasDefaultSnapshot(): boolean {
-	return hasSnapshot(CONFIG_DIR, DEFAULT_SNAPSHOT_ID);
+	return hasSnapshot(resolve(projectRoot(), "config"), DEFAULT_SNAPSHOT_ID);
 }
