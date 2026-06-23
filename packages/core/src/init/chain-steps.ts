@@ -15,6 +15,7 @@ import { patchGeneratedL2NodeConfig, patchGeneratedL3NodeConfig } from "../node-
 import { inboxAbi, publicClient, rollupAbi, walletClient } from "../rpc.js";
 import { startL1Container } from "../runtime.js";
 import { deployRollupViaSdk, prepareNodeConfigFromDeployment } from "../sdk-chain.js";
+import type { InitState } from "../state.js";
 import { markStepDone } from "../state.js";
 import {
 	deployL1L2TokenBridge,
@@ -580,6 +581,78 @@ async function depositFeeTokenToL3Inbox(nativeToken: Address, inbox: Address): P
 	await l2Pub.waitForTransactionReceipt({ hash: depositHash });
 }
 
+async function deployL3Rollup(
+	state: InitState,
+	runtime: InitRuntime,
+	feeTokenDecimals: number | undefined,
+	isV21: boolean,
+): Promise<InitState> {
+	await fundL3DeployerAccounts();
+	writeChainConfig(runtime.configDir, "l3_chain_config.json", {
+		chainId: 333333,
+		owner: accounts.l3owner.address,
+		...(isV21 ? { dataAvailabilityCommittee: true } : {}),
+	});
+	await applyGasEstimationWorkaround();
+
+	// If custom fee token is requested, deploy an ERC20 (+ pricer for v3.2) on L2
+	const { feeTokenAddress, feeTokenPricerAddress } = await deployCustomFeeToken(
+		feeTokenDecimals,
+		!isV21,
+	);
+
+	const rollupCreatorDeployment = await deployRollupCreatorViaDocker(runtime, {
+		hostParentRpc: L2_RPC,
+		dockerParentRpc: L2_RPC_DOCKER,
+		deployerKey: accounts.l3owner.privateKey,
+		maxDataSize: "104857",
+		...(isV21
+			? {
+					image: "nitro-testnode-contract-deployer-v2.1:latest",
+					dockerfile: "docker/contract-deployer-v2.1.Dockerfile",
+				}
+			: {}),
+	});
+	await deployRollupViaSdk({
+		chainConfigPath: resolve(runtime.configDir, "l3_chain_config.json"),
+		chainId: 333333,
+		chainName: "orbit-dev-test",
+		parentChainId: 412346,
+		parentChainIsArbitrum: true,
+		parentRpcUrl: L2_RPC,
+		ownerAddress: accounts.l3owner.address,
+		ownerKey: accounts.l3owner.privateKey,
+		batchPosterAddress: accounts.l3sequencer.address,
+		batchPosterKey: accounts.l3sequencer.privateKey,
+		validatorAddress: accounts.l3owner.address,
+		validatorKey: accounts.l3owner.privateKey,
+		maxDataSize: 104857n,
+		wasmModuleRoot: WASM_MODULE_ROOT as `0x${string}`,
+		deploymentOutputPath: resolve(runtime.configDir, "l3_deployment.json"),
+		chainInfoOutputPath: resolve(runtime.configDir, "l3_chain_info.json"),
+		rawNodeConfigOutputPath: resolve(runtime.configDir, "l3-nodeConfig.raw.json"),
+		rollupCreatorAddress: rollupCreatorDeployment.rollupCreator,
+		stakeToken: rollupCreatorDeployment.stakeToken,
+		nitroContractsVersion: isV21 ? "v2.1" : "v3.2",
+		...(feeTokenAddress ? { nativeToken: feeTokenAddress as `0x${string}` } : {}),
+		...(feeTokenPricerAddress ? { feeTokenPricer: feeTokenPricerAddress as `0x${string}` } : {}),
+	});
+
+	copyConfigFile(runtime, "l3_deployment.json", "l3deployment.json");
+	const deployment = readDeployment(runtime, "l3_deployment.json");
+	return markStepDone(state, "deploy-l3-rollup", {
+		rollup: deployment["rollup"],
+		inbox: deployment["inbox"],
+		bridge: deployment["bridge"],
+		sequencerInbox: deployment["sequencer-inbox"],
+		upgradeExecutor: deployment["upgrade-executor"],
+		validatorWalletCreator: deployment["validator-wallet-creator"] ?? ZERO_ADDRESS,
+		stakeToken: deployment["stake-token"] ?? ZERO_ADDRESS,
+		...(feeTokenAddress ? { feeTokenAddress } : {}),
+		...(feeTokenDecimals !== undefined ? { feeTokenDecimals } : {}),
+	});
+}
+
 function createL3Steps(
 	runtime: InitRuntime,
 	feeTokenDecimals?: number,
@@ -587,74 +660,7 @@ function createL3Steps(
 ): Record<string, StepRunner> {
 	const isV21 = nitroContractsVersion === "v2.1";
 	return {
-		"deploy-l3-rollup": async (state) => {
-			await fundL3DeployerAccounts();
-			writeChainConfig(runtime.configDir, "l3_chain_config.json", {
-				chainId: 333333,
-				owner: accounts.l3owner.address,
-				...(isV21 ? { dataAvailabilityCommittee: true } : {}),
-			});
-			await applyGasEstimationWorkaround();
-
-			// If custom fee token is requested, deploy an ERC20 (+ pricer for v3.2) on L2
-			const { feeTokenAddress, feeTokenPricerAddress } = await deployCustomFeeToken(
-				feeTokenDecimals,
-				!isV21,
-			);
-
-			const rollupCreatorDeployment = await deployRollupCreatorViaDocker(runtime, {
-				hostParentRpc: L2_RPC,
-				dockerParentRpc: L2_RPC_DOCKER,
-				deployerKey: accounts.l3owner.privateKey,
-				maxDataSize: "104857",
-				...(isV21
-					? {
-							image: "nitro-testnode-contract-deployer-v2.1:latest",
-							dockerfile: "docker/contract-deployer-v2.1.Dockerfile",
-						}
-					: {}),
-			});
-			await deployRollupViaSdk({
-				chainConfigPath: resolve(runtime.configDir, "l3_chain_config.json"),
-				chainId: 333333,
-				chainName: "orbit-dev-test",
-				parentChainId: 412346,
-				parentChainIsArbitrum: true,
-				parentRpcUrl: L2_RPC,
-				ownerAddress: accounts.l3owner.address,
-				ownerKey: accounts.l3owner.privateKey,
-				batchPosterAddress: accounts.l3sequencer.address,
-				batchPosterKey: accounts.l3sequencer.privateKey,
-				validatorAddress: accounts.l3owner.address,
-				validatorKey: accounts.l3owner.privateKey,
-				maxDataSize: 104857n,
-				wasmModuleRoot: WASM_MODULE_ROOT as `0x${string}`,
-				deploymentOutputPath: resolve(runtime.configDir, "l3_deployment.json"),
-				chainInfoOutputPath: resolve(runtime.configDir, "l3_chain_info.json"),
-				rawNodeConfigOutputPath: resolve(runtime.configDir, "l3-nodeConfig.raw.json"),
-				rollupCreatorAddress: rollupCreatorDeployment.rollupCreator,
-				stakeToken: rollupCreatorDeployment.stakeToken,
-				nitroContractsVersion: isV21 ? "v2.1" : "v3.2",
-				...(feeTokenAddress ? { nativeToken: feeTokenAddress as `0x${string}` } : {}),
-				...(feeTokenPricerAddress
-					? { feeTokenPricer: feeTokenPricerAddress as `0x${string}` }
-					: {}),
-			});
-
-			copyConfigFile(runtime, "l3_deployment.json", "l3deployment.json");
-			const deployment = readDeployment(runtime, "l3_deployment.json");
-			return markStepDone(state, "deploy-l3-rollup", {
-				rollup: deployment["rollup"],
-				inbox: deployment["inbox"],
-				bridge: deployment["bridge"],
-				sequencerInbox: deployment["sequencer-inbox"],
-				upgradeExecutor: deployment["upgrade-executor"],
-				validatorWalletCreator: deployment["validator-wallet-creator"] ?? ZERO_ADDRESS,
-				stakeToken: deployment["stake-token"] ?? ZERO_ADDRESS,
-				...(feeTokenAddress ? { feeTokenAddress } : {}),
-				...(feeTokenDecimals !== undefined ? { feeTokenDecimals } : {}),
-			});
-		},
+		"deploy-l3-rollup": (state) => deployL3Rollup(state, runtime, feeTokenDecimals, isV21),
 		"generate-l3-config": async (state) => {
 			const rollupData = state.steps["deploy-l3-rollup"]?.data;
 			if (!rollupData) {
