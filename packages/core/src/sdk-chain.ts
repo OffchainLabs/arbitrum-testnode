@@ -116,6 +116,52 @@ export function prepareNodeConfigFromDeployment(input: {
 	});
 }
 
+type DeploymentConfig = ReturnType<typeof createRollupPrepareDeploymentParamsConfig>;
+
+function buildRollupParams(
+	version: "v2.1" | "v3.2",
+	deploymentConfig: DeploymentConfig,
+	params: DeployRollupViaSdkParams,
+): CreateRollupParams<"v2.1"> | CreateRollupParams<"v3.2"> {
+	// feeTokenPricer is a top-level createRollup param (read as params.feeTokenPricer
+	// by the SDK's custom-gas validation), not a deployment-config field. v2.1's
+	// CreateRollupParams has no feeTokenPricer field, so omit it entirely there.
+	const baseRollupParams = {
+		config: deploymentConfig,
+		batchPosters: [params.batchPosterAddress],
+		validators: [params.validatorAddress],
+		maxDataSize: Number(params.maxDataSize),
+		...(params.nativeToken ? { nativeToken: params.nativeToken } : {}),
+	};
+	if (version === "v2.1") {
+		return baseRollupParams as CreateRollupParams<"v2.1">;
+	}
+	return {
+		...baseRollupParams,
+		...(params.feeTokenPricer ? { feeTokenPricer: params.feeTokenPricer } : {}),
+	} as CreateRollupParams<"v3.2">;
+}
+
+function buildChainDeployment(
+	result: CreateRollupResults,
+	stakeToken: Address,
+): CreateChainDeployment {
+	return {
+		bridge: result.coreContracts.bridge,
+		inbox: result.coreContracts.inbox,
+		"sequencer-inbox": result.coreContracts.sequencerInbox,
+		"deployed-at": result.coreContracts.deployedAtBlockNumber,
+		rollup: result.coreContracts.rollup,
+		"native-token": result.coreContracts.nativeToken,
+		"upgrade-executor": result.coreContracts.upgradeExecutor,
+		...(result.coreContracts.validatorUtils
+			? { "validator-utils": result.coreContracts.validatorUtils }
+			: {}),
+		"validator-wallet-creator": result.coreContracts.validatorWalletCreator,
+		"stake-token": stakeToken,
+	};
+}
+
 export async function deployRollupViaSdk(params: DeployRollupViaSdkParams): Promise<void> {
 	const chainConfig = JSON.parse(readFileSync(params.chainConfigPath, "utf-8")) as Record<
 		string,
@@ -136,23 +182,7 @@ export async function deployRollupViaSdk(params: DeployRollupViaSdkParams): Prom
 		version,
 	);
 
-	// feeTokenPricer is a top-level createRollup param (read as params.feeTokenPricer
-	// by the SDK's custom-gas validation), not a deployment-config field. v2.1's
-	// CreateRollupParams has no feeTokenPricer field, so omit it entirely there.
-	const baseRollupParams = {
-		config: deploymentConfig,
-		batchPosters: [params.batchPosterAddress],
-		validators: [params.validatorAddress],
-		maxDataSize: Number(params.maxDataSize),
-		...(params.nativeToken ? { nativeToken: params.nativeToken } : {}),
-	};
-	const rollupParams: CreateRollupParams<"v2.1"> | CreateRollupParams<"v3.2"> =
-		version === "v2.1"
-			? (baseRollupParams as CreateRollupParams<"v2.1">)
-			: ({
-					...baseRollupParams,
-					...(params.feeTokenPricer ? { feeTokenPricer: params.feeTokenPricer } : {}),
-				} as CreateRollupParams<"v3.2">);
+	const rollupParams = buildRollupParams(version, deploymentConfig, params);
 
 	const result = params.rollupCreatorAddress
 		? await createRollupWithCreatorOverride({
@@ -173,20 +203,7 @@ export async function deployRollupViaSdk(params: DeployRollupViaSdkParams): Prom
 		parentChainPublicClient,
 		(deploymentConfig as { stakeToken?: Address }).stakeToken as Address | undefined,
 	);
-	const deployment: CreateChainDeployment = {
-		bridge: result.coreContracts.bridge,
-		inbox: result.coreContracts.inbox,
-		"sequencer-inbox": result.coreContracts.sequencerInbox,
-		"deployed-at": result.coreContracts.deployedAtBlockNumber,
-		rollup: result.coreContracts.rollup,
-		"native-token": result.coreContracts.nativeToken,
-		"upgrade-executor": result.coreContracts.upgradeExecutor,
-		...(result.coreContracts.validatorUtils
-			? { "validator-utils": result.coreContracts.validatorUtils }
-			: {}),
-		"validator-wallet-creator": result.coreContracts.validatorWalletCreator,
-		"stake-token": stakeToken,
-	};
+	const deployment = buildChainDeployment(result, stakeToken);
 	const nodeConfig: NodeConfig = prepareNodeConfig({
 		chainName: params.chainName,
 		chainConfig: chainConfig as PrepareNodeConfigParams["chainConfig"],
