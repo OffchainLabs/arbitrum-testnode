@@ -4,6 +4,11 @@ name: Generate Snapshot
 # host token-bridge-contracts deploy + capture) runs end-to-end on a GitHub
 # runner. Once proven, this grows into the matrixed snapshot generator.
 on:
+  # TEMPORARY (Phase 0 spike): branch-scoped push trigger so the workflow runs
+  # before it exists on the default branch. Remove before merge.
+  push:
+    branches:
+      - ci/generate-snapshots
   workflow_dispatch:
     inputs:
       variant:
@@ -40,6 +45,10 @@ jobs:
       TOKEN_BRIDGE_LOCAL_DIR: ${{ github.workspace }}/../token-bridge-contracts
       # Pinned to the commit the contract-deployer Dockerfiles use.
       TOKEN_BRIDGE_COMMIT: 5975d8f7360816341be7f94fd333ef240f4aec23
+      # Fallbacks so the spike's push trigger works without dispatch inputs.
+      DECIMALS: ${{ inputs.fee-token-decimals || '6' }}
+      NC_VERSION: ${{ inputs.nitro-contracts-version || 'v2.1' }}
+      CAPTURE_ID: ${{ inputs.capture-id || 'l3-custom-6-v2.1' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -81,31 +90,31 @@ jobs:
       - name: Run init (full rebuild + capture)
         run: >-
           pnpm dev init
-          --nitro-contracts-version "${{ inputs.nitro-contracts-version }}"
-          ${{ inputs.fee-token-decimals != '' && format('--fee-token-decimals {0}', inputs.fee-token-decimals) || '' }}
-          --capture-id "${{ inputs.capture-id }}"
+          --nitro-contracts-version "$NC_VERSION"
+          ${{ env.DECIMALS != '' && '--fee-token-decimals "$DECIMALS"' || '' }}
+          --capture-id "$CAPTURE_ID"
           --rebuild
 
       - name: Assert snapshot captured
         run: |
           set -euxo pipefail
-          test -f "config/snapshots/${{ inputs.capture-id }}/manifest.json"
+          test -f "config/snapshots/$CAPTURE_ID/manifest.json"
           echo "--- manifest ---"
-          cat "config/snapshots/${{ inputs.capture-id }}/manifest.json"
+          cat "config/snapshots/$CAPTURE_ID/manifest.json"
 
       - name: Upload snapshot artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: snapshot-${{ inputs.capture-id }}
-          path: config/snapshots/${{ inputs.capture-id }}
+          name: snapshot-${{ env.CAPTURE_ID }}
+          path: config/snapshots/${{ env.CAPTURE_ID }}
           retention-days: 7
 
       - name: Upload init state on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: init-debug-${{ inputs.capture-id }}
+          name: init-debug-${{ env.CAPTURE_ID }}
           path: |
             config/state.json
             config/*.json
