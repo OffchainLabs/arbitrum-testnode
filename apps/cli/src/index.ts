@@ -31,5 +31,8 @@ export function createCli() {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-	createCli().serve();
+	// Must be awaited: an un-awaited serve() runs the command detached, so the
+	// process can exit mid-run when the event loop briefly empties between async
+	// steps (observed as init exiting 0 at wait-l1 before capturing).
+	await createCli().serve();
 }
