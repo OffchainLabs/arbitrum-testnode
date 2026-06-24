@@ -91,18 +91,38 @@ jobs:
       - name: Docker sanity
         run: docker version && docker compose version
 
-      # Capture only. The in-place post-capture verify-restart is a local-dev
-      # convenience (restarts the live stack, waits on RPC with a fixed 120s
-      # budget that's too tight for a cold CI runner). We prove the bundle is
-      # good the real way below: pack -> install into a clean dir -> boot.
-      - name: Run init (full rebuild + capture)
-        run: >-
-          pnpm dev init
-          --nitro-contracts-version "$NC_VERSION"
-          ${{ env.DECIMALS != '' && '--fee-token-decimals "$DECIMALS"' || '' }}
-          --capture-id "$CAPTURE_ID"
-          --rebuild
-          --skip-post-capture-verify
+      # Run init with retries. init is flaky in CI: it intermittently exits 0
+      # the instant `wait-l1` starts, before capturing (event-loop/race on the
+      # runner, ~50%). So we don't trust init's exit code — success = the
+      # manifest exists. --rebuild resets runtime between attempts. We pass
+      # --skip-post-capture-verify because the in-place verify-restart's fixed
+      # 120s RPC budget is too tight for a cold runner; the bundle is validated
+      # the real way below (pack + checksum, then image build).
+      - name: Run init (retry until snapshot captured)
+        run: |
+          set -uo pipefail
+          MANIFEST="config/snapshots/$CAPTURE_ID/manifest.json"
+          DEC_FLAG=""
+          if [ -n "${DECIMALS:-}" ]; then DEC_FLAG="--fee-token-decimals $DECIMALS"; fi
+          max=3
+          for attempt in $(seq 1 "$max"); do
+            echo "::group::init attempt $attempt/$max"
+            # shellcheck disable=SC2086
+            pnpm dev init \
+              --nitro-contracts-version "$NC_VERSION" \
+              $DEC_FLAG \
+              --capture-id "$CAPTURE_ID" \
+              --rebuild \
+              --skip-post-capture-verify || echo "init exited non-zero on attempt $attempt"
+            echo "::endgroup::"
+            if [ -f "$MANIFEST" ]; then
+              echo "snapshot captured on attempt $attempt"
+              break
+            fi
+            echo "attempt $attempt produced no snapshot; resetting and retrying"
+            docker compose -f docker/docker-compose.yaml -p arbitrum-testnode down -v || true
+          done
+          test -f "$MANIFEST"
 
       - name: Assert snapshot captured
         run: |
