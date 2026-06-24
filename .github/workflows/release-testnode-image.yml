@@ -94,6 +94,10 @@ jobs:
     timeout-minutes: 75
     strategy:
       fail-fast: false
+      # Each job runs a full init (4 docker containers + image builds). Cap
+      # concurrency so a release fan-out stays under runner/concurrency limits
+      # and avoids resource contention.
+      max-parallel: 4
       matrix: ${{ fromJson(needs.resolve-publish-matrix.outputs.matrix) }}
     permissions:
       contents: read
