@@ -74,10 +74,11 @@ jobs:
           # On tag push: every variant x every supported version. On dispatch:
           # the chosen filters. resolvePublishMatrix only emits supported combos
           # (e.g. no v2.1 for L2-only variants).
-          # TEMP (validation): a branch push scopes to one combo. REMOVE with the
-          # branch trigger above before merge (revert to the tag/dispatch form).
-          VARIANT_FILTER: ${{ github.ref_type == 'tag' && 'all' || (github.event_name == 'workflow_dispatch' && inputs.variant || 'l3-custom-16') }}
-          VERSION_FILTER: ${{ github.ref_type == 'tag' && 'all' || (github.event_name == 'workflow_dispatch' && inputs.nitro-contracts-version || 'v2.1') }}
+          # TEMP (validation): a branch push runs the full matrix (all combos).
+          # REMOVE with the branch trigger above before merge (revert to the
+          # tag/dispatch form).
+          VARIANT_FILTER: ${{ github.ref_type == 'tag' && 'all' || (github.event_name == 'workflow_dispatch' && inputs.variant || 'all') }}
+          VERSION_FILTER: ${{ github.ref_type == 'tag' && 'all' || (github.event_name == 'workflow_dispatch' && inputs.nitro-contracts-version || 'all') }}
         run: >-
           node --input-type=module -e
           "import { resolvePublishMatrix } from './packages/testnode/src/runtime.mjs';
