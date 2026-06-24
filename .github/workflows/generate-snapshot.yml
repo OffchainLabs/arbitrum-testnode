@@ -39,6 +39,9 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    permissions:
+      contents: read
+      packages: write
     env:
       # init resolves token-bridge-contracts to <repo-parent>/token-bridge-contracts
       # by default; pin it explicitly so the location is unambiguous.
@@ -49,6 +52,7 @@ jobs:
       DECIMALS: ${{ inputs.fee-token-decimals || '6' }}
       NC_VERSION: ${{ inputs.nitro-contracts-version || 'v2.1' }}
       CAPTURE_ID: ${{ inputs.capture-id || 'l3-custom-6-v2.1' }}
+      VARIANT: ${{ inputs.variant || 'l3-custom-6' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -124,6 +128,39 @@ jobs:
           test -f "arbitrum-testnode-snapshot-$CAPTURE_ID.tgz"
           test -f "arbitrum-testnode-snapshot-$CAPTURE_ID.sha256"
           sha256sum -c "arbitrum-testnode-snapshot-$CAPTURE_ID.sha256"
+
+      # Prove the full inline path: build + push a testnode IMAGE from the
+      # freshly-init'd snapshot (the goal — images per variant, no separate
+      # snapshot release). Throwaway tag so no real release artifact is touched.
+      - name: Prepare testnode context
+        run: >-
+          node scripts/ci/prepare-testnode-context.mjs
+          --variant "$VARIANT"
+          --snapshot-id "$CAPTURE_ID"
+          --nitro-contracts-version "$NC_VERSION"
+
+      - name: Lowercase owner
+        id: lower
+        run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Contracts tag
+        id: nc
+        run: echo "tag=nc$(echo "$NC_VERSION" | sed 's/^v//')" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push testnode image (spike tag)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/testnode.Dockerfile
+          push: true
+          tags: ghcr.io/${{ steps.lower.outputs.owner }}/arbitrum-testnode-ci:spike-${{ github.sha }}-${{ steps.nc.outputs.tag }}-${{ env.VARIANT }}
 
       - name: Upload snapshot artifact
         if: success()
