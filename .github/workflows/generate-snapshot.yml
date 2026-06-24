@@ -1,0 +1,113 @@
+name: Generate Snapshot
+
+# Phase 0 spike: prove a full `init` (boot L1/L2/L3 + build deployer images +
+# host token-bridge-contracts deploy + capture) runs end-to-end on a GitHub
+# runner. Once proven, this grows into the matrixed snapshot generator.
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: "Variant label (used for the capture id / artifact name)"
+        required: true
+        default: "l3-custom-6"
+        type: string
+      fee-token-decimals:
+        description: "Custom fee token decimals (empty for ETH gas)"
+        required: false
+        default: "6"
+        type: string
+      nitro-contracts-version:
+        description: "Nitro contracts version"
+        required: true
+        default: "v2.1"
+        type: choice
+        options:
+          - v2.1
+          - v3.2
+      capture-id:
+        description: "Snapshot id to capture under"
+        required: true
+        default: "l3-custom-6-v2.1"
+        type: string
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      # init resolves token-bridge-contracts to <repo-parent>/token-bridge-contracts
+      # by default; pin it explicitly so the location is unambiguous.
+      TOKEN_BRIDGE_LOCAL_DIR: ${{ github.workspace }}/../token-bridge-contracts
+      # Pinned to the commit the contract-deployer Dockerfiles use.
+      TOKEN_BRIDGE_COMMIT: 5975d8f7360816341be7f94fd333ef240f4aec23
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Foundry (forge for token-bridge build)
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install yarn (classic)
+        run: npm install -g yarn@1.22.22
+
+      - name: Prepare token-bridge-contracts host checkout
+        run: |
+          set -euxo pipefail
+          mkdir -p "$TOKEN_BRIDGE_LOCAL_DIR"
+          cd "$TOKEN_BRIDGE_LOCAL_DIR"
+          git init .
+          git remote add origin https://github.com/OffchainLabs/token-bridge-contracts.git
+          git fetch --depth 1 origin "$TOKEN_BRIDGE_COMMIT"
+          git checkout --detach FETCH_HEAD
+          yarn install --frozen-lockfile
+          yarn build
+          test -f node_modules/ts-node/dist/bin.js
+          test -f scripts/deployment/deployTokenBridgeCreator.ts
+
+      - name: Docker sanity
+        run: docker version && docker compose version
+
+      - name: Run init (full rebuild + capture)
+        run: >-
+          pnpm dev init
+          --nitro-contracts-version "${{ inputs.nitro-contracts-version }}"
+          ${{ inputs.fee-token-decimals != '' && format('--fee-token-decimals {0}', inputs.fee-token-decimals) || '' }}
+          --capture-id "${{ inputs.capture-id }}"
+          --rebuild
+
+      - name: Assert snapshot captured
+        run: |
+          set -euxo pipefail
+          test -f "config/snapshots/${{ inputs.capture-id }}/manifest.json"
+          echo "--- manifest ---"
+          cat "config/snapshots/${{ inputs.capture-id }}/manifest.json"
+
+      - name: Upload snapshot artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-${{ inputs.capture-id }}
+          path: config/snapshots/${{ inputs.capture-id }}
+          retention-days: 7
+
+      - name: Upload init state on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: init-debug-${{ inputs.capture-id }}
+          path: |
+            config/state.json
+            config/*.json
+          retention-days: 7
+          if-no-files-found: ignore
