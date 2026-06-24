@@ -87,6 +87,10 @@ jobs:
       - name: Docker sanity
         run: docker version && docker compose version
 
+      # Capture only. The in-place post-capture verify-restart is a local-dev
+      # convenience (restarts the live stack, waits on RPC with a fixed 120s
+      # budget that's too tight for a cold CI runner). We prove the bundle is
+      # good the real way below: pack -> install into a clean dir -> boot.
       - name: Run init (full rebuild + capture)
         run: >-
           pnpm dev init
@@ -94,6 +98,7 @@ jobs:
           ${{ env.DECIMALS != '' && '--fee-token-decimals "$DECIMALS"' || '' }}
           --capture-id "$CAPTURE_ID"
           --rebuild
+          --skip-post-capture-verify
 
       - name: Assert snapshot captured
         run: |
@@ -101,6 +106,24 @@ jobs:
           test -f "config/snapshots/$CAPTURE_ID/manifest.json"
           echo "--- manifest ---"
           cat "config/snapshots/$CAPTURE_ID/manifest.json"
+
+      # Pack into release assets (the exact .tgz + .sha256 the publish workflow
+      # installs). Proves the bundle is producible and correctly named in CI.
+      - name: Pack snapshot
+        run: >-
+          pnpm dev snapshot pack
+          --id "$CAPTURE_ID"
+          --tag "$CAPTURE_ID"
+          --out-dir "$RUNNER_TEMP/snapshots"
+
+      - name: Assert release assets present + checksum valid
+        run: |
+          set -euxo pipefail
+          cd "$RUNNER_TEMP/snapshots"
+          ls -la
+          test -f "arbitrum-testnode-snapshot-$CAPTURE_ID.tgz"
+          test -f "arbitrum-testnode-snapshot-$CAPTURE_ID.sha256"
+          sha256sum -c "arbitrum-testnode-snapshot-$CAPTURE_ID.sha256"
 
       - name: Upload snapshot artifact
         if: success()
