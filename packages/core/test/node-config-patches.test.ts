@@ -185,7 +185,7 @@ describe("patchGeneratedL3NodeConfig", () => {
 		expect(result.execution).toEqual({
 			"forwarding-target": "null",
 			sequencer: {
-				"max-block-speed": "100ms",
+				"max-block-speed": "333ms",
 			},
 		});
 		expect(result.persistent).toEqual({ chain: "local" });
