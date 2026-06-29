@@ -624,8 +624,8 @@ async function deployL3Rollup(
 		ownerKey: accounts.l3owner.privateKey,
 		batchPosterAddress: accounts.l3sequencer.address,
 		batchPosterKey: accounts.l3sequencer.privateKey,
-		validatorAddress: accounts.l3owner.address,
-		validatorKey: accounts.l3owner.privateKey,
+		validatorAddress: accounts.validator.address,
+		validatorKey: accounts.validator.privateKey,
 		maxDataSize: 104857n,
 		wasmModuleRoot: WASM_MODULE_ROOT as `0x${string}`,
 		deploymentOutputPath: resolve(runtime.configDir, "l3_deployment.json"),
@@ -673,7 +673,7 @@ function createL3Steps(
 				parentChainId: 412346,
 				parentChainRpcUrl: L2_RPC,
 				batchPosterPrivateKey: accounts.l3sequencer.privateKey,
-				validatorPrivateKey: accounts.l3owner.privateKey,
+				validatorPrivateKey: accounts.validator.privateKey,
 			});
 			writeFileSync(
 				resolve(runtime.configDir, "nodeConfig.json"),
