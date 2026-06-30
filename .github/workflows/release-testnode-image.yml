@@ -160,12 +160,16 @@ jobs:
           for attempt in $(seq 1 "$max"); do
             echo "::group::init attempt $attempt/$max ($SNAPSHOT_ID)"
             # shellcheck disable=SC2086
-            pnpm dev init \
+            # Bound each attempt so an unforeseen hang can't consume the whole
+            # job; 1500s comfortably exceeds a healthy ~10-15min init and keeps
+            # 3 attempts within timeout-minutes: 75. The retry loop resets with
+            # `docker compose ... down -v` below so a timed-out attempt recovers.
+            timeout 1500 pnpm dev init \
               --nitro-contracts-version "$NC_VERSION" \
               $EXTRA \
               --capture-id "$SNAPSHOT_ID" \
               --rebuild \
-              --skip-post-capture-verify || echo "init exited non-zero on attempt $attempt"
+              --skip-post-capture-verify || echo "init exited/timed out on attempt $attempt"
             echo "::endgroup::"
             if [ -f "$MANIFEST" ]; then
               echo "snapshot captured on attempt $attempt"
