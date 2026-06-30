@@ -249,6 +249,70 @@ describe("deployL2L3TokenBridge", () => {
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 	});
 
+	it("backfills the L3 parentWeth with the L2 WETH for custom-fee chains", async () => {
+		// Custom-fee deployment leaves parentChain.weth at the zero address.
+		mocks.createTokenBridge.mockResolvedValue({
+			tokenBridgeContracts: {
+				...mocks.tokenBridgeContracts,
+				parentChainContracts: {
+					...mocks.tokenBridgeContracts.parentChainContracts,
+					weth: "0x0000000000000000000000000000000000000000",
+				},
+			},
+		});
+		// The real L2 WETH lives in the L1-L2 bridge artifact.
+		fs.writeFileSync(
+			path.join(tmpDir, "l1l2_network.json"),
+			JSON.stringify({
+				l2Network: {
+					tokenBridge: { childWeth: "0x1212121212121212121212121212121212121212" },
+				},
+			}),
+		);
+		fs.writeFileSync(
+			path.join(tmpDir, "l3_deployment.json"),
+			JSON.stringify({
+				rollup: "0x1111111111111111111111111111111111111111",
+				inbox: "0x2222222222222222222222222222222222222222",
+				bridge: "0x3333333333333333333333333333333333333333",
+				"sequencer-inbox": "0x4444444444444444444444444444444444444444",
+				"upgrade-executor": "0x5555555555555555555555555555555555555555",
+				"validator-wallet-creator": "0x6666666666666666666666666666666666666666",
+				"native-token": "0x9999999999999999999999999999999999999999",
+				"deployed-at": 44,
+			}),
+		);
+		vi.mocked(execModule.execOrThrow).mockImplementation((command, args) => {
+			if (isTokenBridgeCreatorDeploy(command, args)) {
+				return "L1TokenBridgeCreator: 0x332Fb35767182F8ac9F9C1405db626105F6694E0";
+			}
+			return "";
+		});
+
+		await deployL2L3TokenBridge({
+			compose: {
+				composeFile: "/tmp/docker-compose.yaml",
+				projectName: "arbitrum-testnode",
+			},
+			configDir: tmpDir,
+			rollupAddress: "0x1111111111111111111111111111111111111111",
+			rollupOwnerKey: "0x2222222222222222222222222222222222222222222222222222222222222222",
+			parentRpc: "http://sequencer:8547",
+			childRpc: "http://l3node:8547",
+			parentKey: "0x3333333333333333333333333333333333333333333333333333333333333333",
+			childKey: "0x3333333333333333333333333333333333333333333333333333333333333333",
+			parentWethOverride: "0x5555555555555555555555555555555555555555",
+		});
+
+		const l2l3Network = JSON.parse(
+			fs.readFileSync(path.join(tmpDir, "l2l3_network.json"), "utf-8"),
+		) as { l3Network: { nativeToken: string; tokenBridge: { parentWeth: string } } };
+		expect(l2l3Network.l3Network.nativeToken).toBe("0x9999999999999999999999999999999999999999");
+		expect(l2l3Network.l3Network.tokenBridge.parentWeth).toBe(
+			"0x1212121212121212121212121212121212121212",
+		);
+	});
+
 	it("uses the local token-bridge workspace for creator deploys on the L2 parent path", async () => {
 		fs.writeFileSync(
 			path.join(tmpDir, "l3_deployment.json"),

@@ -484,6 +484,17 @@ function writeBridgeUiConfig(input: {
 	const parent = input.tokenBridgeContracts.parentChainContracts;
 	const child = input.tokenBridgeContracts.orbitChainContracts;
 	const nativeToken = input.deployment["native-token"] ?? ZERO_ADDRESS;
+	// Custom-fee (ERC20 gas token) L3 chains don't get a WETH gateway from the Orbit
+	// token-bridge deployment, so parentChain.weth comes back as the zero address. The
+	// portal E2E setup deposits this address as a normal ERC20, and a zero address makes
+	// the gateway revert L1_NOT_CONTRACT. Backfill it with the parent chain's real WETH
+	// (the L2 WETH recorded as l2Network.tokenBridge.childWeth) so the deposit routes
+	// through the standard ERC20 gateway instead of reverting.
+	const isCustomFeeChild = input.outputDirName === "l3" && nativeToken !== ZERO_ADDRESS;
+	const parentWeth =
+		isCustomFeeChild && parent.weth === ZERO_ADDRESS
+			? (readL2ChildWeth(input.configDir) as typeof parent.weth)
+			: parent.weth;
 	const bridgeUiConfig: BridgeUiConfigFile = {
 		chainName: input.chainName,
 		parentChainId: input.parentChainId,
@@ -505,7 +516,7 @@ function writeBridgeUiConfig(input: {
 				standardGateway: parent.standardGateway,
 				customGateway: parent.customGateway,
 				wethGateway: parent.wethGateway,
-				weth: parent.weth,
+				weth: parentWeth,
 				multicall: parent.multicall,
 			},
 			chain: {
