@@ -9,10 +9,6 @@ on:
   push:
     tags:
       - "v*"
-    # TEMP (validation): branch-scoped trigger to test this rewrite end-to-end
-    # before merge. Scopes the matrix to one combo. REMOVE before merge.
-    branches:
-      - ci/generate-snapshots
   workflow_dispatch:
     inputs:
       version:
@@ -74,9 +70,6 @@ jobs:
           # On tag push: every variant x every supported version. On dispatch:
           # the chosen filters. resolvePublishMatrix only emits supported combos
           # (e.g. no v2.1 for L2-only variants).
-          # TEMP (validation): a branch push runs the full matrix (all combos).
-          # REMOVE with the branch trigger above before merge (revert to the
-          # tag/dispatch form).
           VARIANT_FILTER: ${{ github.ref_type == 'tag' && 'all' || (github.event_name == 'workflow_dispatch' && inputs.variant || 'all') }}
           VERSION_FILTER: ${{ github.ref_type == 'tag' && 'all' || (github.event_name == 'workflow_dispatch' && inputs.nitro-contracts-version || 'all') }}
         run: >-
