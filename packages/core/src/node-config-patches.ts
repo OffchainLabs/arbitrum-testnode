@@ -156,7 +156,7 @@ export function patchGeneratedL3NodeConfig(
 	// load it pulls delayed parent messages ahead of the TransactionStreamer and the
 	// node rejects eth_sendRawTransaction with "wrong msgIdx" (-32000). A small buffer
 	// lets the parent message stream settle before delayed messages are sequenced.
-	delayedSequencer["finalize-distance"] = 10;
+	delayedSequencer["finalize-distance"] = 50;
 	execution["forwarding-target"] = "null";
 	Object.assign(getOrCreateJsonObject(execution, "sequencer"), L3_EXECUTION_SEQUENCER_CONFIG);
 	next["persistent"] = { chain: "local" };

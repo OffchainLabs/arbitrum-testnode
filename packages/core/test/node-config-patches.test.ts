@@ -172,7 +172,7 @@ describe("patchGeneratedL3NodeConfig", () => {
 			},
 			"delayed-sequencer": {
 				enable: true,
-				"finalize-distance": 10,
+				"finalize-distance": 50,
 			},
 			staker: {
 				enable: false,

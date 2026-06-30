@@ -138,7 +138,7 @@ if [ "$VARIANT" != "l2" ]; then
 		--validation.wasm.allowed-wasm-module-roots "$NITRO_WASM_ROOTS" \
 		--conf.file="$CONFIG_ROOT/l3-nodeConfig.json" \
 		--execution.sequencer.max-block-speed=333ms \
-		--node.delayed-sequencer.finalize-distance=10 \
+		--node.delayed-sequencer.finalize-distance=50 \
 		--node.dangerous.disable-blob-reader \
 		--node.bold.check-staker-switch-interval=1s \
 		--node.staker.dangerous.without-block-validator \
