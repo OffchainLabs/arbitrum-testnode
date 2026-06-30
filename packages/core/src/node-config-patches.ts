@@ -25,6 +25,14 @@ const FAST_EXECUTION_SEQUENCER_CONFIG = {
 	"max-block-speed": "100ms",
 } as const;
 
+// L3 sequencer runs at 333ms (not 100ms) to widen the gap between block
+// production cycles, reducing the consensus/execution msgIdx-race window that
+// under load makes the TransactionStreamer reject eth_sendRawTransaction with
+// "wrong msgIdx" (JSON-RPC -32000).
+const L3_EXECUTION_SEQUENCER_CONFIG = {
+	"max-block-speed": "333ms",
+} as const;
+
 function getJsonObject(parent: JsonObject, key: string): JsonObject {
 	const value = parent[key];
 	if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -146,7 +154,7 @@ export function patchGeneratedL3NodeConfig(
 	dangerous["disable-blob-reader"] = true;
 	delayedSequencer["finalize-distance"] = 0;
 	execution["forwarding-target"] = "null";
-	Object.assign(getOrCreateJsonObject(execution, "sequencer"), FAST_EXECUTION_SEQUENCER_CONFIG);
+	Object.assign(getOrCreateJsonObject(execution, "sequencer"), L3_EXECUTION_SEQUENCER_CONFIG);
 	next["persistent"] = { chain: "local" };
 	next["ws"] = { addr: "0.0.0.0" };
 
