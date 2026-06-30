@@ -137,6 +137,7 @@ if [ "$VARIANT" != "l2" ]; then
 	start_background env HOME="$DATA_ROOT/l3node" /usr/local/bin/nitro \
 		--validation.wasm.allowed-wasm-module-roots "$NITRO_WASM_ROOTS" \
 		--conf.file="$CONFIG_ROOT/l3-nodeConfig.json" \
+		--execution.sequencer.max-block-speed=333ms \
 		--node.dangerous.disable-blob-reader \
 		--node.bold.check-staker-switch-interval=1s \
 		--node.staker.dangerous.without-block-validator \

@@ -59,6 +59,7 @@ services:
     entrypoint: ["nitro"]
     command:
       - --conf.file=/config/l3-nodeConfig.json
+      - --execution.sequencer.max-block-speed=333ms
       - --node.dangerous.disable-blob-reader
       - --http.addr=0.0.0.0
       - --http.port=8547
