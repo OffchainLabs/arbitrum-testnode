@@ -152,7 +152,11 @@ export function patchGeneratedL3NodeConfig(
 	Object.assign(staker, FAST_STAKER_CONFIG);
 	Object.assign(bold, FAST_BOLD_CONFIG);
 	dangerous["disable-blob-reader"] = true;
-	delayedSequencer["finalize-distance"] = 0;
+	// finalize-distance=0 gives the L3 delayed sequencer no finality buffer, so under
+	// load it pulls delayed parent messages ahead of the TransactionStreamer and the
+	// node rejects eth_sendRawTransaction with "wrong msgIdx" (-32000). A small buffer
+	// lets the parent message stream settle before delayed messages are sequenced.
+	delayedSequencer["finalize-distance"] = 10;
 	execution["forwarding-target"] = "null";
 	Object.assign(getOrCreateJsonObject(execution, "sequencer"), L3_EXECUTION_SEQUENCER_CONFIG);
 	next["persistent"] = { chain: "local" };

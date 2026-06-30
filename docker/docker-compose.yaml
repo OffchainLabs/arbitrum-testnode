@@ -60,6 +60,7 @@ services:
     command:
       - --conf.file=/config/l3-nodeConfig.json
       - --execution.sequencer.max-block-speed=333ms
+      - --node.delayed-sequencer.finalize-distance=10
       - --node.dangerous.disable-blob-reader
       - --http.addr=0.0.0.0
       - --http.port=8547
