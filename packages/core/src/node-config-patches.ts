@@ -17,7 +17,7 @@ const FAST_BOLD_CONFIG = {
 	"assertion-confirming-interval": "100ms",
 	"assertion-scanning-interval": "100ms",
 	"minimum-gap-to-parent-assertion": "100ms",
-	"parent-chain-block-time": "100ms",
+	"parent-chain-block-time": "1s",
 } as const;
 
 const FAST_STAKER_CONFIG = {

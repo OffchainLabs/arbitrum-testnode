@@ -100,7 +100,7 @@ services:
       - --node.bold.assertion-confirming-interval=100ms
       - --node.bold.assertion-scanning-interval=100ms
       - --node.bold.minimum-gap-to-parent-assertion=100ms
-      - --node.bold.parent-chain-block-time=100ms
+      - --node.bold.parent-chain-block-time=1s
       - --http.addr=0.0.0.0
       - --http.port=8647
       - --http.api=net,web3,eth

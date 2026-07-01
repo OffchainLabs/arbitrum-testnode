@@ -165,7 +165,7 @@ describe("patchGeneratedL3NodeConfig", () => {
 				"assertion-confirming-interval": "100ms",
 				"assertion-scanning-interval": "100ms",
 				"minimum-gap-to-parent-assertion": "100ms",
-				"parent-chain-block-time": "100ms",
+				"parent-chain-block-time": "1s",
 			},
 			dangerous: {
 				"disable-blob-reader": true,
