@@ -112,12 +112,12 @@ start_background env HOME="$DATA_ROOT/validator" /usr/local/bin/nitro \
 	--node.staker.use-smart-contract-wallet=true \
 	--node.staker.disable-challenge=true \
 	--node.staker.dangerous.without-block-validator \
-	--node.staker.staker-interval=100ms \
-	--node.staker.make-assertion-interval=100ms \
+	--node.staker.staker-interval=1s \
+	--node.staker.make-assertion-interval=1s \
 	--node.staker.confirmation-blocks=1 \
 	--node.bold.check-staker-switch-interval=1s \
 	--node.bold.rpc-block-number=latest \
-	--node.bold.assertion-posting-interval=100ms \
+	--node.bold.assertion-posting-interval=1s \
 	--node.bold.assertion-confirming-interval=100ms \
 	--node.bold.assertion-scanning-interval=100ms \
 	--node.bold.minimum-gap-to-parent-assertion=100ms \

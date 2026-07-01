@@ -9,7 +9,11 @@ const FAST_BATCH_POSTER_CONFIG = {
 
 const FAST_BOLD_CONFIG = {
 	"rpc-block-number": "latest",
-	"assertion-posting-interval": "100ms",
+	// assertion posting at 100ms re-posts unchanged state (EXPECTED_ASSERTION_SEEN)
+	// and posts on unconfirmed predecessors (PREV_NOT_LATEST_CONFIRMED), which makes
+	// the app's deposit/withdrawal confirmation reads revert. Post at 1s so each
+	// assertion settles before the next; confirming/scanning stay fast.
+	"assertion-posting-interval": "1s",
 	"assertion-confirming-interval": "100ms",
 	"assertion-scanning-interval": "100ms",
 	"minimum-gap-to-parent-assertion": "100ms",
@@ -17,8 +21,8 @@ const FAST_BOLD_CONFIG = {
 } as const;
 
 const FAST_STAKER_CONFIG = {
-	"staker-interval": "100ms",
-	"make-assertion-interval": "100ms",
+	"staker-interval": "1s",
+	"make-assertion-interval": "1s",
 } as const;
 
 const FAST_EXECUTION_SEQUENCER_CONFIG = {

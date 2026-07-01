@@ -161,7 +161,7 @@ describe("patchGeneratedL3NodeConfig", () => {
 			},
 			bold: {
 				"rpc-block-number": "latest",
-				"assertion-posting-interval": "100ms",
+				"assertion-posting-interval": "1s",
 				"assertion-confirming-interval": "100ms",
 				"assertion-scanning-interval": "100ms",
 				"minimum-gap-to-parent-assertion": "100ms",
@@ -178,8 +178,8 @@ describe("patchGeneratedL3NodeConfig", () => {
 				enable: false,
 				"use-smart-contract-wallet": true,
 				"disable-challenge": true,
-				"staker-interval": "100ms",
-				"make-assertion-interval": "100ms",
+				"staker-interval": "1s",
+				"make-assertion-interval": "1s",
 			},
 		});
 		expect(result.execution).toEqual({
