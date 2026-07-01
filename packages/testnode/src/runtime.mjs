@@ -32,6 +32,7 @@ export const VARIANTS = {
 		snapshotId: "l2",
 		snapshotReleaseTag: "v0.1.6",
 		l3Enabled: false,
+		supportedContractsVersions: ["v3.2"],
 		hostPorts: {
 			l1: 8545,
 			l2: 8547,
@@ -45,6 +46,7 @@ export const VARIANTS = {
 		snapshotReleaseTag: "timeboost-0.1.8",
 		l3Enabled: false,
 		timeboostEnabled: true,
+		supportedContractsVersions: ["v3.2"],
 		hostPorts: {
 			l1: 8545,
 			l2: 8547,
@@ -57,6 +59,7 @@ export const VARIANTS = {
 		snapshotId: "default",
 		snapshotReleaseTag: "v0.1.6",
 		l3Enabled: true,
+		supportedContractsVersions: ["v3.2"],
 		hostPorts: {
 			l1: 8545,
 			l2: 8547,
@@ -74,6 +77,8 @@ export const VARIANTS = {
 			"v2.1": { snapshotId: "l3-custom-6-v2.1", snapshotReleaseTag: "l3-custom-6-v2.1" },
 		},
 		l3Enabled: true,
+		feeTokenDecimals: 6,
+		supportedContractsVersions: ["v2.1", "v3.2"],
 		hostPorts: {
 			l1: 8545,
 			l2: 8547,
@@ -88,6 +93,8 @@ export const VARIANTS = {
 		snapshotId: "l3-custom-16",
 		snapshotReleaseTag: "l3-custom-16",
 		l3Enabled: true,
+		feeTokenDecimals: 16,
+		supportedContractsVersions: ["v2.1", "v3.2"],
 		hostPorts: {
 			l1: 8545,
 			l2: 8547,
@@ -105,6 +112,8 @@ export const VARIANTS = {
 			"v2.1": { snapshotId: "l3-custom-18-v2.1", snapshotReleaseTag: "l3-custom-18-v2.1" },
 		},
 		l3Enabled: true,
+		feeTokenDecimals: 18,
+		supportedContractsVersions: ["v2.1", "v3.2"],
 		hostPorts: {
 			l1: 8545,
 			l2: 8547,
@@ -119,6 +128,8 @@ export const VARIANTS = {
 		snapshotId: "l3-custom-20",
 		snapshotReleaseTag: "l3-custom-20",
 		l3Enabled: true,
+		feeTokenDecimals: 20,
+		supportedContractsVersions: ["v2.1", "v3.2"],
 		hostPorts: {
 			l1: 8545,
 			l2: 8547,
@@ -250,6 +261,78 @@ export function resolveVariantSnapshot(variant, contractsVersion) {
 		return override;
 	}
 	return { snapshotId: def.snapshotId, snapshotReleaseTag: def.snapshotReleaseTag };
+}
+
+/**
+ * The snapshot id to capture/use for a (variant, contracts version) pair. The
+ * default contracts version uses the variant's base `snapshotId`; any other
+ * version is suffixed (e.g. `l3-custom-16` + `v2.1` → `l3-custom-16-v2.1`),
+ * matching the keys declared in `snapshotsByContractsVersion`.
+ *
+ * @param {string} variant
+ * @param {string} contractsVersion
+ * @returns {string}
+ */
+export function snapshotIdForContractsVersion(variant, contractsVersion) {
+	const def = VARIANTS[variant];
+	if (!def) {
+		throw new Error(`Unknown variant ${variant}`);
+	}
+	if (contractsVersion === DEFAULT_NITRO_CONTRACTS_VERSION) {
+		return def.snapshotId;
+	}
+	return `${def.snapshotId}-${contractsVersion}`;
+}
+
+/**
+ * Build one publish-matrix row for a (variant, contracts version) pair.
+ *
+ * @param {VariantDefinition} def
+ * @param {string} contractsVersion
+ */
+function buildPublishRow(def, contractsVersion) {
+	return {
+		variant: def.name,
+		contractsVersion,
+		snapshotId: snapshotIdForContractsVersion(def.name, contractsVersion),
+		feeTokenDecimals: def.feeTokenDecimals ?? null,
+		timeboostEnabled: def.timeboostEnabled ?? false,
+	};
+}
+
+/**
+ * The publish-matrix rows a single variant contributes, filtered by version.
+ *
+ * @param {VariantDefinition} def
+ * @param {string} versionFilter
+ */
+function publishRowsForVariant(def, versionFilter) {
+	const versions = (def.supportedContractsVersions ?? []).filter(
+		(version) => versionFilter === "all" || version === versionFilter,
+	);
+	return versions.map((version) => buildPublishRow(def, version));
+}
+
+/**
+ * The set of (variant × nitro-contracts-version) snapshots to publish. Each
+ * variant contributes a row per version in its `supportedContractsVersions`
+ * that also matches `versionFilter`.
+ *
+ * @param {string} variantFilter a variant name or "all"
+ * @param {string} versionFilter a contracts version or "all"
+ * @returns {Array<{ variant: string; contractsVersion: string; snapshotId: string; feeTokenDecimals: number | null; timeboostEnabled: boolean }>}
+ */
+export function resolvePublishMatrix(variantFilter, versionFilter) {
+	const names = variantFilter === "all" ? Object.keys(VARIANTS) : [variantFilter];
+	const rows = [];
+	for (const name of names) {
+		const def = VARIANTS[name];
+		if (!def) {
+			throw new Error(`Unknown variant ${name}`);
+		}
+		rows.push(...publishRowsForVariant(def, versionFilter));
+	}
+	return rows;
 }
 
 /** @param {{ runnerTemp?: string | undefined; variant: string; version: string }} options */

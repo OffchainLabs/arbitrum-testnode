@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
 	buildStartTestnodeState,
 	hasVariantSnapshot,
+	resolvePublishMatrix,
 	resolveVariantSnapshot,
+	snapshotIdForContractsVersion,
 	testnodeDockerRunArgs,
 } from "../src/index.js";
 
@@ -113,5 +115,104 @@ describe("buildStartTestnodeState", () => {
 		);
 		expect(args).not.toContain("redis://timeboost-redis:6379");
 		expect(args).not.toContain("redis:7-alpine");
+	});
+});
+
+describe("snapshotIdForContractsVersion", () => {
+	it("returns the base snapshot id for the default contracts version (v3.2)", () => {
+		expect(snapshotIdForContractsVersion("l3-custom-16", "v3.2")).toBe("l3-custom-16");
+		expect(snapshotIdForContractsVersion("l2", "v3.2")).toBe("l2");
+	});
+
+	it("suffixes the snapshot id for non-default versions (v2.1)", () => {
+		expect(snapshotIdForContractsVersion("l3-custom-16", "v2.1")).toBe("l3-custom-16-v2.1");
+		expect(snapshotIdForContractsVersion("l3-custom-6", "v2.1")).toBe("l3-custom-6-v2.1");
+	});
+
+	it("agrees with the declared snapshotsByContractsVersion overrides", () => {
+		expect(snapshotIdForContractsVersion("l3-custom-6", "v2.1")).toBe(
+			resolveVariantSnapshot("l3-custom-6", "v2.1").snapshotId,
+		);
+		expect(snapshotIdForContractsVersion("l3-custom-18", "v2.1")).toBe(
+			resolveVariantSnapshot("l3-custom-18", "v2.1").snapshotId,
+		);
+	});
+
+	it("throws on an unknown variant", () => {
+		expect(() => snapshotIdForContractsVersion("nope", "v3.2")).toThrow(/Unknown variant/);
+	});
+});
+
+describe("resolvePublishMatrix", () => {
+	const key = (row: { variant: string; contractsVersion: string }) =>
+		`${row.variant}@${row.contractsVersion}`;
+
+	it("emits exactly the 11 expected (variant × version) rows for all/all", () => {
+		const rows = resolvePublishMatrix("all", "all");
+		expect(new Set(rows.map(key))).toEqual(
+			new Set([
+				"l2@v3.2",
+				"l2-timeboost@v3.2",
+				"l3-eth@v3.2",
+				"l3-custom-6@v2.1",
+				"l3-custom-6@v3.2",
+				"l3-custom-16@v2.1",
+				"l3-custom-16@v3.2",
+				"l3-custom-18@v2.1",
+				"l3-custom-18@v3.2",
+				"l3-custom-20@v2.1",
+				"l3-custom-20@v3.2",
+			]),
+		);
+		expect(rows).toHaveLength(11);
+	});
+
+	it("does not emit a v2.1 row for l2, l2-timeboost, or l3-eth", () => {
+		const rows = resolvePublishMatrix("all", "all");
+		const v21 = new Set(rows.filter((r) => r.contractsVersion === "v2.1").map((r) => r.variant));
+		expect(v21.has("l2")).toBe(false);
+		expect(v21.has("l2-timeboost")).toBe(false);
+		expect(v21.has("l3-eth")).toBe(false);
+	});
+
+	it("carries the snapshot id and fee-token decimals for a custom v2.1 row", () => {
+		const rows = resolvePublishMatrix("all", "all");
+		const row = rows.find((r) => r.variant === "l3-custom-16" && r.contractsVersion === "v2.1");
+		expect(row).toMatchObject({
+			snapshotId: "l3-custom-16-v2.1",
+			feeTokenDecimals: 16,
+			timeboostEnabled: false,
+		});
+	});
+
+	it("marks the timeboost row and sets null fee-token decimals", () => {
+		const rows = resolvePublishMatrix("all", "all");
+		const row = rows.find((r) => r.variant === "l2-timeboost");
+		expect(row).toMatchObject({
+			contractsVersion: "v3.2",
+			feeTokenDecimals: null,
+			timeboostEnabled: true,
+		});
+	});
+
+	it("returns exactly one row when filtering to a variant and version", () => {
+		const rows = resolvePublishMatrix("l3-custom-20", "v2.1");
+		expect(rows).toEqual([
+			{
+				variant: "l3-custom-20",
+				contractsVersion: "v2.1",
+				snapshotId: "l3-custom-20-v2.1",
+				feeTokenDecimals: 20,
+				timeboostEnabled: false,
+			},
+		]);
+	});
+
+	it("returns no rows when the version is unsupported for the variant", () => {
+		expect(resolvePublishMatrix("l2", "v2.1")).toEqual([]);
+	});
+
+	it("throws on an unknown variant filter", () => {
+		expect(() => resolvePublishMatrix("nope", "all")).toThrow(/Unknown variant/);
 	});
 });

@@ -128,12 +128,20 @@ export async function runInitCommand(options: InitCommandOptions, context: InitC
 		});
 	}
 
+	// Hold the event loop open for the whole foreground init. Some async steps
+	// (notably wait-l1's first fetch, right after the synchronous docker
+	// spawnSync in start-l1) leave a brief window with no registered libuv
+	// handle; without this keep-alive Node exits mid-run (silently as exit 0, or
+	// as an unsettled-top-level-await exit 13), which is flaky under CI load.
+	const keepAlive = setInterval(() => {}, 1 << 30);
 	try {
 		return await runInitForeground(runtime, options, snapshotId, feeTokenDecimals);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		finishActiveRun("failed", { exitCode: 1, error: message });
 		throw err;
+	} finally {
+		clearInterval(keepAlive);
 	}
 }
 

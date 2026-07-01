@@ -1,35 +1,25 @@
 name: Publish Testnode
 
+# On a version tag (or manual dispatch), publish a testnode image for every
+# variant x nitro-contracts-version we support. Each image's chain state is
+# GENERATED inline in CI by running `init` (no pre-built snapshot release
+# bundles, nothing to publish out of band). The intended (variant x version)
+# matrix and the init flags per combo come from runtime.mjs resolvePublishMatrix.
 on:
   push:
     tags:
       - "v*"
   workflow_dispatch:
     inputs:
-      name:
-        description: "Testnode name from config/testnodes.json (provides defaults for the inputs below)"
-        required: false
-        default: ""
-        type: string
       version:
-        description: "Pinned testnode image version tag (overrides config/testnodes.json)"
-        required: false
-        default: ""
-        type: string
-      snapshot-version:
-        description: "Snapshot release tag to use for every selected variant (overrides config/testnodes.json)"
-        required: false
-        default: ""
-        type: string
-      snapshot-repo:
-        description: "GitHub repo in owner/repo form that hosts the tagged snapshot release"
+        description: "Image version tag (default: tag on push, else apps/cli package version)"
         required: false
         default: ""
         type: string
       variant:
-        description: "Named variant to publish"
+        description: "Variant to publish (or all)"
         required: true
-        default: "l3-eth"
+        default: "all"
         type: choice
         options:
           - all
@@ -41,9 +31,9 @@ on:
           - l3-custom-18
           - l3-custom-20
       nitro-contracts-version:
-        description: "Nitro contracts version baked into the snapshot"
+        description: "Nitro contracts version (or all)"
         required: true
-        default: "v3.2"
+        default: "all"
         type: choice
         options:
           - all
@@ -55,82 +45,61 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
-      version: ${{ steps.resolve.outputs.version }}
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve testnode inputs
-        id: resolve
-        env:
-          # On a tag push, publish every variant in every nitro-contracts version
-          # so we can test against either. Each variant installs its own
-          # pre-generated snapshot bundle (per-variant snapshotReleaseTag in
-          # runtime.mjs), so snapshot-version here is unused for publishing and
-          # passed only to satisfy resolve-testnode.mjs. The matrix builder skips
-          # variant x version combos that have no snapshot bundle.
-          TESTNODE_NAME: ${{ github.event_name == 'push' && '' || inputs.name }}
-          TESTNODE_VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
-          TESTNODE_SNAPSHOT_VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.snapshot-version }}
-          TESTNODE_VARIANT: ${{ github.event_name == 'push' && 'all' || inputs.variant }}
-          TESTNODE_NITRO_CONTRACTS_VERSION: ${{ github.event_name == 'push' && 'all' || inputs.nitro-contracts-version }}
-        run: >-
-          node scripts/ci/resolve-testnode.mjs
-          --name "$TESTNODE_NAME"
-          --version "$TESTNODE_VERSION"
-          --snapshot-version "$TESTNODE_SNAPSHOT_VERSION"
-          --variant "$TESTNODE_VARIANT"
-          --nitro-contracts-version "$TESTNODE_NITRO_CONTRACTS_VERSION"
+      - name: Resolve image version
+        id: ver
+        run: |
+          set -euo pipefail
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            V="${{ github.ref_name }}"
+          elif [ -n "${{ inputs.version }}" ]; then
+            V="${{ inputs.version }}"
+          else
+            V="v$(node -p "require('./apps/cli/package.json').version")"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "resolved image version: $V"
 
       - name: Build publish matrix
         id: matrix
         env:
-          INPUT_VARIANT: ${{ steps.resolve.outputs.variant }}
-          INPUT_SNAPSHOT_VERSION: ${{ steps.resolve.outputs.snapshot-version }}
-          INPUT_CONTRACTS_VERSION: ${{ steps.resolve.outputs.nitro-contracts-version }}
+          # On tag push: every variant x every supported version. On dispatch:
+          # the chosen filters. resolvePublishMatrix only emits supported combos
+          # (e.g. no v2.1 for L2-only variants).
+          VARIANT_FILTER: ${{ github.ref_type == 'tag' && 'all' || (github.event_name == 'workflow_dispatch' && inputs.variant || 'all') }}
+          VERSION_FILTER: ${{ github.ref_type == 'tag' && 'all' || (github.event_name == 'workflow_dispatch' && inputs.nitro-contracts-version || 'all') }}
         run: >-
           node --input-type=module -e
-          "import { NITRO_CONTRACTS_VERSIONS, VARIANTS, hasVariantSnapshot, resolveVariantSnapshot } from './packages/testnode/src/runtime.mjs';
-          const names =
-          process.env.INPUT_VARIANT === 'all'
-          ? Object.keys(VARIANTS)
-          : [process.env.INPUT_VARIANT];
-          const contractsVersions =
-          process.env.INPUT_CONTRACTS_VERSION === 'all'
-          ? Object.keys(NITRO_CONTRACTS_VERSIONS)
-          : [process.env.INPUT_CONTRACTS_VERSION];
-          const include = [];
-          for (const variant of names) {
-            const config = VARIANTS[variant];
-            if (!config) throw new Error(\`Unknown variant \${variant}\`);
-            for (const contractsVersion of contractsVersions) {
-              if (!hasVariantSnapshot(variant, contractsVersion)) {
-                console.error(\`Skipping \${variant} x \${contractsVersion}: no snapshot bundle\`);
-                continue;
-              }
-              const snapshot = resolveVariantSnapshot(variant, contractsVersion);
-              include.push({
-                variant,
-                contractsVersion,
-                snapshotId: snapshot.snapshotId,
-                snapshotReleaseTag: snapshot.snapshotReleaseTag
-              });
-            }
-          }
-          const output = process.env.GITHUB_OUTPUT;
-          if (!output) throw new Error('GITHUB_OUTPUT is required');
+          "import { resolvePublishMatrix } from './packages/testnode/src/runtime.mjs';
+          const include = resolvePublishMatrix(process.env.VARIANT_FILTER, process.env.VERSION_FILTER);
+          if (!include.length) throw new Error('empty publish matrix');
+          console.error('publish matrix:', JSON.stringify(include));
           const { appendFileSync } = await import('node:fs');
-          appendFileSync(output, 'matrix=' + JSON.stringify({ include }) + '\\n');"
+          appendFileSync(process.env.GITHUB_OUTPUT, 'matrix=' + JSON.stringify({ include }) + '\\n');"
 
   publish-testnode-image:
     needs: resolve-publish-matrix
     runs-on: ubuntu-latest
+    timeout-minutes: 75
     strategy:
       fail-fast: false
+      # Each job runs a full init (4 docker containers + image builds). Cap
+      # concurrency so a release fan-out stays under runner/concurrency limits
+      # and avoids resource contention.
+      max-parallel: 4
       matrix: ${{ fromJson(needs.resolve-publish-matrix.outputs.matrix) }}
     permissions:
       contents: read
       packages: write
+    env:
+      # init resolves token-bridge-contracts to <repo-parent>/token-bridge-contracts;
+      # pin the location and the commit the contract-deployer Dockerfiles use.
+      TOKEN_BRIDGE_LOCAL_DIR: ${{ github.workspace }}/../token-bridge-contracts
+      TOKEN_BRIDGE_COMMIT: 5975d8f7360816341be7f94fd333ef240f4aec23
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -146,17 +115,76 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Install the pre-generated snapshot bundle for this variant. Snapshots are
-      # generated out of band and published as release bundles (the per-variant
-      # snapshotReleaseTag lives in runtime.mjs); the publish never runs init.
-      - name: Install snapshot release
+      - name: Install Foundry (forge for token-bridge build)
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install yarn (classic)
+        run: npm install -g yarn@1.22.22
+
+      - name: Prepare token-bridge-contracts host checkout
+        run: |
+          set -euxo pipefail
+          mkdir -p "$TOKEN_BRIDGE_LOCAL_DIR"
+          cd "$TOKEN_BRIDGE_LOCAL_DIR"
+          git init .
+          git remote add origin https://github.com/OffchainLabs/token-bridge-contracts.git
+          git fetch --depth 1 origin "$TOKEN_BRIDGE_COMMIT"
+          git checkout --detach FETCH_HEAD
+          yarn install --frozen-lockfile
+          yarn build
+          test -f node_modules/ts-node/dist/bin.js
+          test -f scripts/deployment/deployTokenBridgeCreator.ts
+
+      # Generate this combo's snapshot inline via init. init is flaky in CI
+      # (intermittently exits 0 at wait-l1 before capturing, ~50%), so success
+      # is driven off the manifest existing, with up to 3 attempts and a reset
+      # between. --skip-post-capture-verify because the in-place verify-restart's
+      # fixed 120s RPC budget is too tight for a cold runner.
+      - name: Generate snapshot (init, retry until captured)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TESTNODE_SNAPSHOT_GH_REPO: ${{ github.repository }}
-        run: >-
-          pnpm dev snapshot install --force
-          --id "${{ matrix.snapshotId }}"
-          --release-tag "${{ matrix.snapshotReleaseTag }}"
+          SNAPSHOT_ID: ${{ matrix.snapshotId }}
+          NC_VERSION: ${{ matrix.contractsVersion }}
+          DECIMALS: ${{ matrix.feeTokenDecimals }}
+          TIMEBOOST: ${{ matrix.timeboostEnabled }}
+        run: |
+          set -uo pipefail
+          MANIFEST="config/snapshots/$SNAPSHOT_ID/manifest.json"
+          EXTRA=""
+          if [ -n "${DECIMALS:-}" ] && [ "${DECIMALS}" != "null" ]; then
+            EXTRA="$EXTRA --fee-token-decimals $DECIMALS"
+          fi
+          if [ "${TIMEBOOST:-}" = "true" ]; then
+            EXTRA="$EXTRA --timeboost-enabled"
+          fi
+          max=3
+          for attempt in $(seq 1 "$max"); do
+            echo "::group::init attempt $attempt/$max ($SNAPSHOT_ID)"
+            # shellcheck disable=SC2086
+            # Bound each attempt so an unforeseen hang can't consume the whole
+            # job; 1500s comfortably exceeds a healthy ~10-15min init and keeps
+            # 3 attempts within timeout-minutes: 75. The retry loop resets with
+            # `docker compose ... down -v` below so a timed-out attempt recovers.
+            timeout 1500 pnpm dev init \
+              --nitro-contracts-version "$NC_VERSION" \
+              $EXTRA \
+              --capture-id "$SNAPSHOT_ID" \
+              --rebuild \
+              --skip-post-capture-verify || echo "init exited/timed out on attempt $attempt"
+            echo "::endgroup::"
+            if [ -f "$MANIFEST" ]; then
+              echo "snapshot captured on attempt $attempt"
+              break
+            fi
+            echo "attempt $attempt produced no snapshot; resetting and retrying"
+            docker compose -f docker/docker-compose.yaml -p arbitrum-testnode down -v || true
+          done
+          test -f "$MANIFEST"
+
+      - name: Dump docker state on failure
+        if: failure()
+        run: |
+          docker ps -a || true
+          docker compose -f docker/docker-compose.yaml -p arbitrum-testnode logs --tail=100 || true
 
       - name: Prepare testnode context
         run: >-

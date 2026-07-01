@@ -15,6 +15,8 @@ export interface VariantDefinition {
 	 */
 	snapshotsByContractsVersion?: Record<string, { snapshotId: string; snapshotReleaseTag: string }>;
 	timeboostEnabled?: boolean;
+	feeTokenDecimals?: number;
+	supportedContractsVersions?: string[];
 }
 
 export interface TestnodeState {

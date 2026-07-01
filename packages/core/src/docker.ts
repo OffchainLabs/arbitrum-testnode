@@ -91,6 +91,10 @@ export async function waitForRpc(
 					method: "eth_chainId",
 					params: [],
 				}),
+				// Bound each request so a hung connection (e.g. docker-proxy
+				// accepting TCP before anvil serves HTTP) aborts and lets the
+				// loop re-check the deadline instead of blocking forever.
+				signal: AbortSignal.timeout(pollIntervalMs),
 			});
 			if (response.ok) {
 				return;

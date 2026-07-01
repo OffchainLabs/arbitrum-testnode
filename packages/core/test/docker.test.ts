@@ -169,4 +169,24 @@ describe("waitForRpc", () => {
 		await expect(waitForRpc("http://localhost:8545", 5000, 10)).resolves.toBeUndefined();
 		expect(fetchSpy).toHaveBeenCalledTimes(3);
 	});
+
+	it("rejects on overall timeout even when individual fetches never resolve", async () => {
+		// Simulate docker-proxy accepting the TCP connection but never serving
+		// HTTP: fetch connects and never resolves on its own, mirroring real
+		// fetch by rejecting only when its abort signal fires. Without a
+		// per-request signal (the bug) every call hangs forever and the loop
+		// never re-checks the deadline.
+		fetchSpy.mockImplementation(
+			(_url: string, init?: RequestInit) =>
+				new Promise((_resolve, reject) => {
+					init?.signal?.addEventListener("abort", () =>
+						reject(new DOMException("The operation was aborted.", "AbortError")),
+					);
+				}),
+		);
+
+		await expect(waitForRpc("http://localhost:8545", 200, 20)).rejects.toThrow(
+			"RPC at http://localhost:8545 not ready",
+		);
+	});
 });
